@@ -12,8 +12,8 @@
     "cs:Game.Tests.MathUtilTests"
   ],
   "acceptance": [
-    "tools\unity.cmd test EditMode exits 0",
-    "tools\strata-index.cmd -Verify exits 0"
+    "tools/unity.cmd test EditMode exits 0",
+    "tools/strata-index.cmd -Verify exits 0"
   ],
   "createdBy": "template",
   "createdAt": "2026-10-31T00:00:00+09:00",

@@ -56,7 +56,7 @@ switch ($Command) {
         $task = [pscustomobject]@{
             id = $id; title = $Arg; status = 'todo'; priority = $Priority
             paths = @($Paths | Where-Object { $_ }); strataRefs = @($Refs | Where-Object { $_ })
-            acceptance = if ($Accept) { @($Accept) } else { @('tools\unity.cmd test EditMode exits 0', 'tools\strata-index.cmd -Verify exits 0') }
+            acceptance = if ($Accept) { @($Accept) } else { @('tools/unity.cmd test EditMode exits 0', 'tools/strata-index.cmd -Verify exits 0') }
             createdBy = $user.Name; createdAt = (Get-Date).ToString('o')
             assignee = $null; agent = $null; branch = $null; completedAt = $null; notes = ''
             _path = Join-Path (Get-TaskDir) "$id.json"
