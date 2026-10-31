@@ -65,7 +65,13 @@ git push -u origin HEAD                                  # → PR（テンプレ
 | **pre-push フック** | default ブランチ（main）への直接 push を拒否（PR 経由に統一）。Git LFS のフックにも連結 |
 | **UnityYAMLMerge** | シーン・プレハブの衝突を Unity のスマートマージで解決（`setup` が登録） |
 | **CI（`.github/workflows/checks.yml`）** | PR ごとに `.meta` 整合性、索引、タスクファイル、`Task:` トレーラーを検査（Unity ライセンス不要） |
-| **推奨: ブランチ保護** | GitHub の Settings → Branches で main に「PR 必須」「checks 必須」「Code Owner のレビュー必須」を設定 |
+| **ブランチ保護（設定済み）** | main は PR 経由のみ、CI `repo-checks` の成功と最新化（strict）が必須、未解決の会話があるとマージ不可、force push・削除は禁止 |
+
+ブランチ保護は 1 人運用でも詰まらないよう、**承認数 0・Code Owner レビュー任意**にしてあります。メンバーが増えたら次で厳しくしてください（リポジトリ管理者が実行）。
+
+```powershell
+gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protection/required_pull_request_reviews -F required_approving_review_count=1 -F require_code_owner_reviews=true
+```
 
 ### 誰が・何を・どんな指示で（履歴）
 | 見たいもの | コマンド / 場所 |
