@@ -11,7 +11,7 @@
 
   The task id defaults to the one in the current branch name (task/<id>-...).
   Inside the run, AGENT_RUN_FILE / AGENT_NAME / AGENT_TASK are set, so:
-    - commits get "Task:" and "Agent-Run:" trailers (.githooks/commit-msg)
+    - commits get "Task:", "Agent:" and "Run-Record:" trailers (.githooks/commit-msg)
     - work delegated with tools\strata.cmd ask is appended to the same record
 #>
 param(

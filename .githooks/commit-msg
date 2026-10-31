@@ -2,7 +2,8 @@
 # Adds attribution trailers so every commit says which task and which agent run produced it:
 #   Task: <id>           from the branch name task/<id>-... (or AGENT_TASK)
 #   Agent: <name>        when committed inside tools/agent.* (AGENT_NAME)
-#   Agent-Run: <file>    the History/runs record holding the exact instructions (AGENT_RUN_FILE)
+#   Run-Record: <file>   the History/runs record holding the exact instructions (AGENT_RUN_FILE)
+#   (not "Agent-Run": git would treat it as the same key as "Agent" and skip it)
 msg="$1"
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 task="${AGENT_TASK:-}"
@@ -13,5 +14,5 @@ add() { grep -q "^$1:" "$msg" || git interpret-trailers --in-place --if-exists d
 [ -n "$task" ] && add "Task" "$task"
 [ -n "${AGENT_NAME:-}" ] && add "Agent" "$AGENT_NAME"
 # tools/agent.* sets AGENT_RUN_FILE as a repo-relative path with forward slashes
-[ -n "${AGENT_RUN_FILE:-}" ] && add "Agent-Run" "$AGENT_RUN_FILE"
+[ -n "${AGENT_RUN_FILE:-}" ] && add "Run-Record" "$AGENT_RUN_FILE"
 exit 0
