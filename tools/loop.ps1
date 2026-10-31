@@ -48,15 +48,19 @@ function Write-Log([string]$msg) {
     [IO.File]::AppendAllText($LoopLog, "$line`n", $script:Utf8)
 }
 
-function Invoke-Tool([string]$Script, [string[]]$ToolArgs) {
-    # Runs a tools/*.ps1 in-process and returns its exit code without aborting the loop
+function Invoke-Tool([string]$Name, [scriptblock]$Block) {
+    # Runs a tools/*.ps1 call in-process and returns its exit code without aborting the loop.
+    # (A script block, not an argument array: array splatting would pass "-Agent" as a plain value.)
     $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { & (Join-Path $Tools $Script) @ToolArgs 2>&1 | ConvertTo-OutputLine | Write-Host; $code = $LASTEXITCODE }
-    catch { Write-Log "  $Script failed: $($_.Exception.Message)"; $code = 1 }
+    $global:LASTEXITCODE = 0
+    try { & $Block 2>&1 | ConvertTo-OutputLine | Write-Host; $code = $LASTEXITCODE }
+    catch { Write-Log "  $Name failed: $($_.Exception.Message)"; $code = 1 }
     finally { $ErrorActionPreference = $prev }
     if ($null -eq $code) { $code = 0 }
     return $code
 }
+
+function Get-ToolPath([string]$Script) { Join-Path $Tools $Script }
 
 function Test-StrataUp {
     $port = (Get-Content -LiteralPath (Join-Path $script:RepoRoot '.strata/launch.json') -Raw | ConvertFrom-Json).port
@@ -67,7 +71,7 @@ function Confirm-Strata {
     if ($Agent -ne 'codex-local') { return $true }
     if (Test-StrataUp) { return $true }
     Write-Log 'Strata is not running; starting it (tools\strata.cmd up)'
-    $null = Invoke-Tool 'strata.ps1' @('up')
+    $null = Invoke-Tool 'strata up' { & (Get-ToolPath 'strata.ps1') up }
     return (Test-StrataUp)
 }
 
@@ -151,7 +155,8 @@ while ($true) {
     foreach ($t in (Get-AllTasks | Where-Object { $_.status -eq 'todo' } | Sort-Object priority, id)) {
         if ($claims | Where-Object { $_.Task -eq $t.id }) { continue }
         if ($t.paths -and ($claims | Where-Object { $_.Paths -and (Test-PathOverlap @($t.paths) @($_.Paths)) })) { continue }
-        if ((Invoke-Tool 'task.ps1' @('claim', $t.id, '-Agent', $Agent)) -eq 0 -and (Get-CurrentBranch) -like "task/$($t.id)*") { $picked = $t; break }
+        $code = Invoke-Tool 'task claim' { & (Get-ToolPath 'task.ps1') claim $t.id -Agent $Agent }
+        if ($code -eq 0 -and (Get-CurrentBranch) -like "task/$($t.id)*") { $picked = $t; break }
         $null = Invoke-Git switch -q $default -AllowFail
     }
     if (-not $picked) {
@@ -169,10 +174,10 @@ while ($true) {
     for ($round = 0; $round -le $MaxFixRounds; $round++) {
         if (Test-Path -LiteralPath $StopFile) { break }
         Write-Log "  round $($round): running $Agent"
-        $null = Invoke-Tool 'agent.ps1' @($Agent, $prompt, '-Task', $task.id)
-        $null = Invoke-Tool 'unity.ps1' @('refresh')            # .meta for new files (outside the sandbox)
-        $null = Invoke-Tool 'strata-index.ps1' @()
-        $testCode = Invoke-Tool 'unity.ps1' @('test', $TestPlatform)
+        $null = Invoke-Tool 'agent' { & (Get-ToolPath 'agent.ps1') $Agent $prompt -Task $task.id }
+        $null = Invoke-Tool 'unity refresh' { & (Get-ToolPath 'unity.ps1') refresh }   # .meta for new files (outside the sandbox)
+        $null = Invoke-Tool 'context index' { & (Get-ToolPath 'strata-index.ps1') }
+        $testCode = Invoke-Tool 'unity test' { & (Get-ToolPath 'unity.ps1') test $TestPlatform }
         if ($testCode -eq 0) { $passed = $true; Write-Log "  round $($round): tests passed"; break }
         $failures = Get-Failures $TestPlatform
         Write-Log "  round $($round): tests failed (exit $testCode)"
@@ -186,8 +191,11 @@ while ($true) {
     $commit = Invoke-Git commit -q -m "task($($task.id)): $status -- $($task.title)" -AllowFail
     if ($LASTEXITCODE -ne 0) { Write-Log "  commit failed or nothing to commit: $($commit -join ' ')" }
 
-    if ($passed) { $null = Invoke-Tool 'task.ps1' @('done', $task.id) }
-    else { $null = Invoke-Tool 'task.ps1' @('block', $task.id, '-Note', "loop: Unity tests still failing after $($MaxFixRounds + 1) rounds") }
+    if ($passed) { $null = Invoke-Tool 'task done' { & (Get-ToolPath 'task.ps1') done $task.id } }
+    else {
+        $note = "loop: Unity tests still failing after $($MaxFixRounds + 1) rounds"
+        $null = Invoke-Tool 'task block' { & (Get-ToolPath 'task.ps1') block $task.id -Note $note }
+    }
 
     $push = Invoke-Git push -q -u origin $branch -AllowFail
     if ($LASTEXITCODE -ne 0) { Write-Log "  push failed: $($push -join ' ')" }
