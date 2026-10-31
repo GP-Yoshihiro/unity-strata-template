@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   Run an AI agent on a task and record who ran it, which agent/model, the exact instructions and the
-  outcome in History/runs/ (one file per run, committed with the work).
+  outcome in the private history repo (team.config.json: historyRepo, cloned at .history/).
+  The record is pushed when the run starts (so teammates see it live) and again when it ends.
 
 .EXAMPLE
   tools\agent.cmd codex-local "Implement T-261031-0001 following Prompts/unity_csharp_coder.md"
@@ -10,7 +11,7 @@
   tools\agent.cmd strata "Summarise Logs/UnityTest-EditMode.log"   # single local-model answer
 
   The task id defaults to the one in the current branch name (task/<id>-...).
-  Inside the run, AGENT_RUN_FILE / AGENT_NAME / AGENT_TASK are set, so:
+  Inside the run, AGENT_RUN_FILE / AGENT_RUN_REF / AGENT_NAME / AGENT_TASK are set, so:
     - commits get "Task:", "Agent:" and "Run-Record:" trailers (.githooks/commit-msg)
     - work delegated with tools\strata.cmd ask is appended to the same record
 #>
@@ -64,8 +65,10 @@ switch ($Agent) {
 $record = $null
 if (-not $NoRecord) {
     $record = New-RunRecord -Agent $Agent -Model $model -TaskId $Task -Prompt $Prompt
-    $env:AGENT_RUN_FILE = $record
-    Write-Host "Recording run: $record"
+    $env:AGENT_RUN_FILE = $record.Path   # absolute; tools\strata.ps1 ask appends delegated work here
+    $env:AGENT_RUN_REF = $record.Ref     # repo-relative id used in the Run-Record commit trailer
+    Publish-History "start $($record.Id)"
+    Write-Host "Recording run: history:$($record.Ref)"
 }
 $env:AGENT_NAME = $Agent
 $env:AGENT_TASK = $Task
@@ -84,8 +87,9 @@ if ($null -eq $code) { $code = 0 }
 Remove-Item -LiteralPath $promptFile -ErrorAction SilentlyContinue
 
 if ($record) {
-    Add-RunSection $record 'Result (tail)' (($output | Select-Object -Last 80) -join "`n") 6000
-    Complete-RunRecord $record $code
-    Write-Host "Run recorded: $record (commit it with the work)"
+    Add-RunSection $record.Path 'Result (tail)' (($output | Select-Object -Last 80) -join "`n") 6000
+    Complete-RunRecord $record.Path $code
+    Publish-History "end $($record.Id) exit=$code"
+    Write-Host "Run recorded: history:$($record.Ref)"
 }
 exit $code

@@ -1,0 +1,7 @@
+{
+  "description": "Team settings shared by tools/task.*, tools/agent.*, tools/team.* and tools/loop.*",
+  "historyRepo": "https://github.com/GP-Yoshihiro/unity-strata-history.git",
+  "historyDir": ".history",
+  "defaultBranch": "main",
+  "staleClaimHours": 24
+}

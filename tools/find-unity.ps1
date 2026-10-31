@@ -33,20 +33,26 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $OnWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
 $OnMac = (-not $OnWindows) -and $IsMacOS
 
+# Inside an agent sandbox (e.g. Codex on Windows) reading the user's profile can fail with
+# "Access is denied"; treat that location as absent instead of aborting the whole search.
+function Test-PathSafe([string]$LiteralPath, [string]$PathType = 'Any') {
+    try { return [bool](Test-Path -LiteralPath $LiteralPath -PathType $PathType -ErrorAction Stop) } catch { return $false }
+}
+
 function Resolve-FromRepo([string]$p) {
     if ([string]::IsNullOrWhiteSpace($p)) { return $null }
     $p = [Environment]::ExpandEnvironmentVariables($p.Trim().Trim('"'))
     if ($p.StartsWith('~')) { $p = Join-Path $HOME $p.Substring(1).TrimStart('/', '\') }
     if (-not [IO.Path]::IsPathRooted($p)) { $p = Join-Path $RepoRoot $p }
     # A path to the editor folder / .app is accepted too
-    if (Test-Path -LiteralPath $p -PathType Container) {
+    if (Test-PathSafe -LiteralPath $p -PathType Container) {
         foreach ($rel in (Get-ExeRelPaths)) {
             $c = Join-Path $p $rel
-            if (Test-Path -LiteralPath $c -PathType Leaf) { return (Resolve-Path -LiteralPath $c).Path }
+            if (Test-PathSafe -LiteralPath $c -PathType Leaf) { return (Resolve-Path -LiteralPath $c).Path }
         }
         return $null
     }
-    if (Test-Path -LiteralPath $p -PathType Leaf) { return (Resolve-Path -LiteralPath $p).Path }
+    if (Test-PathSafe -LiteralPath $p -PathType Leaf) { return (Resolve-Path -LiteralPath $p).Path }
     return $null
 }
 
@@ -59,7 +65,7 @@ function Get-ExeRelPaths {
 
 function Get-ProjectVersion {
     $f = Join-Path $RepoRoot 'ProjectSettings/ProjectVersion.txt'
-    if (-not (Test-Path -LiteralPath $f)) { return $null }
+    if (-not (Test-PathSafe -LiteralPath $f)) { return $null }
     $m = Select-String -LiteralPath $f -Pattern '^m_EditorVersion:\s*(\S+)' | Select-Object -First 1
     if ($m) { return $m.Matches[0].Groups[1].Value }
     return $null
@@ -95,7 +101,7 @@ function Get-EditorRoots {
         $roots.Add((Join-Path $HOME 'Unity/Hub/Editor'))
     }
     $secondary = Join-Path (Get-HubConfigDir) 'secondaryInstallPath.json'
-    if (Test-Path -LiteralPath $secondary) {
+    if (Test-PathSafe -LiteralPath $secondary) {
         try {
             $s = Get-Content -LiteralPath $secondary -Raw | ConvertFrom-Json
             if ($s -is [string] -and $s.Trim()) { $roots.Add($s.Trim()) }
@@ -107,11 +113,11 @@ function Get-EditorRoots {
 function Get-InstalledEditors {
     $found = @{}
     foreach ($root in (Get-EditorRoots)) {
-        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        if (-not (Test-PathSafe -LiteralPath $root -PathType Container)) { continue }
         foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
             foreach ($rel in (Get-ExeRelPaths)) {
                 $exe = Join-Path $dir.FullName $rel
-                if (Test-Path -LiteralPath $exe -PathType Leaf) { $found[$exe] = $dir.Name; break }
+                if (Test-PathSafe -LiteralPath $exe -PathType Leaf) { $found[$exe] = $dir.Name; break }
             }
         }
     }
@@ -119,12 +125,12 @@ function Get-InstalledEditors {
     $hubDir = Get-HubConfigDir
     foreach ($json in @('editors-v2.json', 'editors.json')) {
         $f = Join-Path $hubDir $json
-        if (-not (Test-Path -LiteralPath $f)) { continue }
-        $text = Get-Content -LiteralPath $f -Raw
+        if (-not (Test-PathSafe -LiteralPath $f)) { continue }
+        try { $text = Get-Content -LiteralPath $f -Raw -ErrorAction Stop } catch { continue }
         $pattern = if ($OnWindows) { '"([^"]+?Unity\.exe)"' } else { '"([^"]+?/Unity)"' }
         foreach ($m in [regex]::Matches($text, $pattern)) {
             $exe = $m.Groups[1].Value -replace '\\\\', '\'
-            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { continue }
+            if (-not (Test-PathSafe -LiteralPath $exe -PathType Leaf)) { continue }
             $ver = [regex]::Match($exe, '\d+\.\d+\.\d+[a-z]+\d+').Value
             if ($ver) { $found[$exe] = $ver }
         }
@@ -143,7 +149,7 @@ if ($List) {
 foreach ($candidate in @(
         @{ Src = '-UnityPath'; Val = $UnityPath },
         @{ Src = 'UNITY_EDITOR_PATH'; Val = $env:UNITY_EDITOR_PATH },
-        @{ Src = '.unity-path.local'; Val = $(if (Test-Path -LiteralPath (Join-Path $RepoRoot '.unity-path.local')) { (Get-Content -LiteralPath (Join-Path $RepoRoot '.unity-path.local') | Where-Object { $_ -and -not $_.StartsWith('#') } | Select-Object -First 1) }) })) {
+        @{ Src = '.unity-path.local'; Val = $(if (Test-PathSafe -LiteralPath (Join-Path $RepoRoot '.unity-path.local')) { (Get-Content -LiteralPath (Join-Path $RepoRoot '.unity-path.local') | Where-Object { $_ -and -not $_.StartsWith('#') } | Select-Object -First 1) }) })) {
     if (-not $candidate.Val) { continue }
     $r = Resolve-FromRepo $candidate.Val
     if ($r) { Write-Verbose "Unity from $($candidate.Src)"; Write-Output $r; return }

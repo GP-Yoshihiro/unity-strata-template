@@ -153,8 +153,9 @@ switch ($Command) {
         $c = Get-RemoteClaims | Where-Object { $_.Task -eq $Arg }
         if ($c) { Write-Host "Claim: $($c.User) ($($c.Agent)) since $($c.Since) on $($c.Branch); paths: $($c.Paths -join ', ')" }
         Write-Host "`nAgent runs:"
-        Get-ChildItem -Path (Join-Path $script:RepoRoot 'History/runs') -Recurse -Filter "*-$Arg.md" -ErrorAction SilentlyContinue |
-            ForEach-Object { '  ' + $_.FullName.Substring($script:RepoRoot.Length + 1).Replace('\', '/') } | Write-Host
+        $historyRoot = Sync-History
+        Get-ChildItem -Path (Join-Path $historyRoot 'runs') -Recurse -Filter "*-$Arg.md" -ErrorAction SilentlyContinue |
+            ForEach-Object { '  history:' + $_.FullName.Substring($historyRoot.Length + 1).Replace('\', '/') } | Write-Host
         Write-Host "`nCommits:"
         Invoke-Git log --all --format='  %h %ad %an  %s' --date=short "--grep=Task: $Arg" -AllowFail | Write-Host
     }

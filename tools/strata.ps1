@@ -87,7 +87,7 @@ function Invoke-StrataAsk([string[]]$AskArgs, [string[]]$PipedLines) {
     $json = [Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray()) | ConvertFrom-Json
     $answer = $json.choices[0].message.content
 
-    # Recorded under the calling agent run (tools\agent.cmd sets AGENT_RUN_FILE), so delegated work is visible in History/.
+    # Recorded under the calling agent run (tools\agent.cmd sets AGENT_RUN_FILE), so delegated work shows in the run history.
     if ($env:AGENT_RUN_FILE -and $env:AGENT_NAME -ne 'strata') {
         . (Join-Path $PSScriptRoot 'lib/team.ps1')
         $label = (($words -join ' ') -split "`r?`n")[0]

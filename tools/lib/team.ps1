@@ -68,10 +68,94 @@ function ConvertTo-PrettyJson($obj) {
     return $sb.ToString()
 }
 
-# ---------- Agent run history (History/runs) ----------
+# ---------- Team config (team.config.json) ----------
+
+function Get-TeamConfig {
+    $cfg = [pscustomobject]@{ historyRepo = ''; historyDir = '.history'; defaultBranch = 'main'; staleClaimHours = 24 }
+    $path = Join-Path $script:RepoRoot 'team.config.json'
+    if (Test-Path -LiteralPath $path) {
+        $file = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $file.PSObject.Properties) { $cfg | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value -Force }
+    }
+    return $cfg
+}
+
+# ---------- Agent run history (private history repo) ----------
+# Prompts and results can contain things the public template repo must not publish, so run records live
+# in a separate private repository (team.config.json: historyRepo), cloned to <main checkout>/.history.
 # One Markdown file per run, so concurrent runs by different people never touch the same file.
 
+function Invoke-GitIn([string]$Dir) {
+    $gitArgs = @($args)
+    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $out = & git -C $Dir @gitArgs 2>&1
+    $ErrorActionPreference = $prev
+    return $out | ForEach-Object { "$_" }
+}
+
+function Get-HistoryRoot {
+    # Shared by all worktrees: resolved against the main checkout (parent of the common .git dir)
+    $common = Invoke-Git rev-parse --path-format=absolute --git-common-dir -AllowFail | Select-Object -First 1
+    $mainRoot = if ($common -and (Test-Path -LiteralPath $common)) { Split-Path -Parent $common } else { $script:RepoRoot }
+    return Join-Path $mainRoot (Get-TeamConfig).historyDir
+}
+
+function Protect-PrivateFolder([string]$Dir) {
+    # Hidden + readable only by the current user (and SYSTEM). Never part of the project's git (see .gitignore).
+    # Agent sandboxes run as a different Windows user, so they cannot read past prompts either.
+    $item = Get-Item -LiteralPath $Dir -Force
+    $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
+    if ($onWindows) {
+        if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
+            $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
+            $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            & icacls.exe $Dir /inheritance:r /grant:r "$($me):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /T /Q 2>&1 | Out-Null
+            $ErrorActionPreference = $prev
+            if ($LASTEXITCODE -ne 0) { Write-Warning "Could not restrict permissions on $Dir (icacls exit $LASTEXITCODE)." }
+        }
+    } else {
+        & chmod 700 $Dir
+    }
+}
+
+function Sync-History {
+    # Create the hidden private history folder; clone/update the private history repo into it when
+    # team.config.json names one you can access, otherwise keep records local only.
+    $cfg = Get-TeamConfig
+    $dir = Get-HistoryRoot
+    $isRepo = Test-Path -LiteralPath (Join-Path $dir '.git')
+    if ($cfg.historyRepo -and -not $isRepo -and -not (Test-Path -LiteralPath (Join-Path $dir 'runs'))) {
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Force -Recurse }   # empty placeholder from an earlier offline run
+        & git clone -q $cfg.historyRepo $dir 2>&1 | Out-Null
+        $ErrorActionPreference = $prev
+        if ($LASTEXITCODE -ne 0) { Write-Warning "History repo $($cfg.historyRepo) is not reachable (no access or offline). Run records stay local in $dir." }
+    } elseif ($isRepo) {
+        $null = Invoke-GitIn $dir pull -q --rebase --autostash
+    }
+    New-Item -ItemType Directory -Force -Path (Join-Path $dir 'runs') | Out-Null
+    Protect-PrivateFolder $dir
+    return $dir
+}
+
+function Publish-History([string]$Message) {
+    # Commit and push new/changed records; retries on concurrent pushes (each run is its own file, so rebase never conflicts).
+    $cfg = Get-TeamConfig
+    $dir = Get-HistoryRoot
+    if (-not $cfg.historyRepo -or -not (Test-Path -LiteralPath (Join-Path $dir '.git'))) { return }
+    $null = Invoke-GitIn $dir add -A
+    $null = Invoke-GitIn $dir -c "user.name=$((Get-GitUser).Name)" -c "user.email=$((Get-GitUser).Email)" commit -q -m $Message
+    for ($i = 0; $i -lt 3; $i++) {
+        $null = Invoke-GitIn $dir push -q
+        if ($LASTEXITCODE -eq 0) { return }
+        $null = Invoke-GitIn $dir pull -q --rebase
+    }
+    Write-Warning "Could not push run history to $($cfg.historyRepo); it will go up with the next run."
+}
+
 function New-RunRecord {
+    # Returns @{ Path = absolute file; Ref = 'runs/yyyy-MM/<id>.md' inside the history repo }
     param([string]$Agent, [string]$Model, [string]$TaskId, [string]$Prompt)
     $user = Get-GitUser
     $now = Get-Date
@@ -79,7 +163,8 @@ function New-RunRecord {
     if (-not $TaskId) { $TaskId = Get-TaskIdFromBranch $branch }
     $id = '{0}-{1}-{2}' -f $now.ToString('yyyyMMdd-HHmmss'), $user.Slug, $Agent
     if ($TaskId) { $id += "-$TaskId" }
-    $rel = 'History/runs/{0}/{1}.md' -f $now.ToString('yyyy-MM'), $id
+    $rel = 'runs/{0}/{1}.md' -f $now.ToString('yyyy-MM'), $id
+    $root = Sync-History
     $base = (Invoke-Git rev-parse --short HEAD -AllowFail | Select-Object -First 1)
     $text = @"
 ---
@@ -102,27 +187,26 @@ $Prompt
 ``````
 
 "@
-    Write-TextFile (Join-Path $script:RepoRoot $rel) ($text.TrimEnd() + "`n`n")
-    return $rel
+    $path = Join-Path $root $rel
+    Write-TextFile $path ($text.TrimEnd() + "`n`n")
+    return [pscustomobject]@{ Path = $path; Ref = $rel; Id = $id }
 }
 
-function Add-RunSection([string]$RelPath, [string]$Title, [string]$Body, [int]$MaxChars = 4000) {
-    if (-not $RelPath) { return }
-    $path = Join-Path $script:RepoRoot $RelPath
-    if (-not (Test-Path -LiteralPath $path)) { return }
+function Add-RunSection([string]$Path, [string]$Title, [string]$Body, [int]$MaxChars = 4000) {
+    # Silently skipped when the record is not writable (e.g. called from inside an agent sandbox)
+    try { if (-not $Path -or -not (Test-Path -LiteralPath $Path -ErrorAction Stop)) { return } } catch { return }
     if ($Body.Length -gt $MaxChars) { $Body = $Body.Substring(0, $MaxChars) + "`n... (truncated, $($Body.Length) chars)" }
     $add = "## $Title`n`n``````text`n$Body`n```````n`n"
-    [IO.File]::AppendAllText($path, $add, $script:Utf8)
+    try { [IO.File]::AppendAllText($Path, $add, $script:Utf8) } catch { }
 }
 
-function Complete-RunRecord([string]$RelPath, [int]$ExitCode) {
-    $path = Join-Path $script:RepoRoot $RelPath
-    $text = [IO.File]::ReadAllText($path, $script:Utf8)
+function Complete-RunRecord([string]$Path, [int]$ExitCode) {
+    $text = [IO.File]::ReadAllText($Path, $script:Utf8)
     $text = $text -replace '(?m)^finished:.*$', "finished: $((Get-Date).ToString('o'))"
     $text = $text -replace '(?m)^exit_code:.*$', "exit_code: $ExitCode"
-    $changed = Invoke-Git status --porcelain --untracked-files=all -AllowFail | Where-Object { $_ -notmatch 'History/runs/' } | ForEach-Object { "- $($_.Substring(3))" }
+    $changed = Invoke-Git status --porcelain --untracked-files=all -AllowFail | ForEach-Object { "- $($_.Substring(3))" }
     if ($changed) { $text += "## Files changed in working tree`n`n$($changed -join "`n")`n`n" }
-    [IO.File]::WriteAllText($path, $text, $script:Utf8)
+    [IO.File]::WriteAllText($Path, $text, $script:Utf8)
 }
 
 # ---------- Tasks (Tasks/items/*.json) ----------
@@ -173,14 +257,29 @@ function Get-RemoteClaims {
     return $claims
 }
 
-function Test-PathOverlap([string[]]$A, [string[]]$B) {
-    # Glob prefixes overlap when one is a prefix of the other after stripping wildcards.
-    foreach ($a in $A) {
-        foreach ($b in $B) {
-            $pa = ($a -replace '\*.*$', '').TrimEnd('/')
-            $pb = ($b -replace '\*.*$', '').TrimEnd('/')
-            if (-not $pa -or -not $pb) { return $true }
-            if ($pa.StartsWith($pb) -or $pb.StartsWith($pa)) { return "$a <-> $b" }
+function Get-PathSegments([string]$Glob) {
+    # Folder segments before the first wildcard: "Assets/Scenes/*.unity" -> Assets, Scenes
+    $segs = @()
+    foreach ($s in ($Glob.Replace('\', '/') -split '/')) {
+        if (-not $s) { continue }
+        if ($s -match '[\*\?\[]') { break }
+        $segs += $s
+    }
+    return , $segs
+}
+
+function Test-PathOverlap([string[]]$Mine, [string[]]$Theirs) {
+    # Two globs overlap when one's fixed folder part is a whole-segment prefix of the other's
+    # ("Assets/Player" vs "Assets/Player/Move.cs" overlap; "Assets/Player" vs "Assets/PlayerUI" do not).
+    # Note: PowerShell variable names are case-insensitive, so loop variables must not reuse parameter names.
+    foreach ($pathMine in $Mine) {
+        foreach ($pathTheirs in $Theirs) {
+            $sa = Get-PathSegments $pathMine
+            $sb = Get-PathSegments $pathTheirs
+            $n = [math]::Min($sa.Count, $sb.Count)
+            $same = $true
+            for ($i = 0; $i -lt $n; $i++) { if ($sa[$i] -ne $sb[$i]) { $same = $false; break } }
+            if ($same) { return "$pathMine <-> $pathTheirs" }
         }
     }
     return $false

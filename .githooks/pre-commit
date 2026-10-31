@@ -9,9 +9,9 @@ fail=0
 # 1. Unity .meta consistency
 if ! bash tools/check-meta.sh; then fail=1; fi
 
-# 2. Never commit Unity's generated / per-machine folders
-bad="$(git diff --cached --name-only --diff-filter=A | grep -E '^(Library|Temp|Obj|UserSettings|Logs)/|^\.codex-local/' | grep -v '^Logs/.gitkeep$' || true)"
-if [ -n "$bad" ]; then echo "Generated or per-machine files staged:"; printf '  %s\n' $bad; fail=1; fi
+# 2. Never commit Unity's generated / per-machine folders, or the private run history
+bad="$(git diff --cached --name-only --diff-filter=A | grep -E '^(Library|Temp|Obj|UserSettings|Logs)/|^\.codex-local/|^\.history/|^History/' | grep -v '^Logs/.gitkeep$' || true)"
+if [ -n "$bad" ]; then echo "Generated, per-machine or private (run history) files staged:"; printf '  %s\n' $bad; fail=1; fi
 
 # 3. Big binaries must go through Git LFS (see .gitattributes)
 while IFS= read -r f; do

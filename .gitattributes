@@ -10,7 +10,6 @@
 .strata/*.json text eol=lf
 .githooks/* text eol=lf
 Tasks/items/*.json text eol=lf
-History/** text eol=lf
 
 # Unity YAML (force text serialization in Editor settings) — merge with UnityYAMLMerge if configured
 *.unity    text merge=unityyamlmerge eol=lf

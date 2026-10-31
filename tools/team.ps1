@@ -21,43 +21,29 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/team.ps1')
 
-function ConvertFrom-RunText([string[]]$lines, [string]$file, [string]$where) {
+function ConvertFrom-RunText([string[]]$lines, [string]$file) {
     $meta = @{}
     foreach ($l in ($lines | Select-Object -First 14)) { $m = [regex]::Match($l, '^(\w+):\s*(.*)$'); if ($m.Success) { $meta[$m.Groups[1].Value] = $m.Groups[2].Value } }
     # First prompt line: line 17 of the record written by New-RunRecord (front matter, heading, fence)
     $promptLine = "$($lines | Select-Object -Skip 16 -First 1)"
+    $exit = $meta['exit_code']
+    if (-not $exit -and -not $meta['finished']) { $exit = 'running' }
     [pscustomobject]@{
         Started = $meta['started']; User = $meta['user']; Agent = $meta['agent']; Task = $meta['task']
-        Exit = $meta['exit_code']; Prompt = if ($promptLine.Length -gt 60) { $promptLine.Substring(0, 60) + '...' } else { $promptLine }
-        Where = $where; File = $file
+        Exit = $exit; Prompt = if ($promptLine.Length -gt 60) { $promptLine.Substring(0, 60) + '...' } else { $promptLine }
+        File = $file
     }
 }
 
-# Runs in this checkout plus runs on teammates' pushed task branches (origin/task/*) that are not merged yet,
-# so you can see what other people's agents are being told before their PRs land.
+# All runs of the whole team: the private history repo is pulled first, so runs started on other
+# machines (including ones still running) show up immediately.
 function Get-Runs {
-    $seen = @{}
-    $runs = New-Object System.Collections.Generic.List[object]
-    $dir = Join-Path $script:RepoRoot 'History/runs'
-    if (Test-Path -LiteralPath $dir) {
-        foreach ($f in (Get-ChildItem -LiteralPath $dir -Recurse -Filter '*.md')) {
-            $rel = $f.FullName.Substring($script:RepoRoot.Length + 1).Replace('\', '/')
-            $seen[$rel] = $true
-            $runs.Add((ConvertFrom-RunText (Get-Content -LiteralPath $f.FullName -Encoding UTF8) $rel 'here'))
-        }
-    }
-    $null = Invoke-Git fetch -q --prune origin -AllowFail
-    foreach ($ref in (Invoke-Git for-each-ref --format='%(refname:short)' refs/remotes/origin/task -AllowFail)) {
-        foreach ($rel in (Invoke-Git ls-tree -r --name-only $ref -- History/runs -AllowFail)) {
-            if ($seen.ContainsKey($rel) -or $rel -notlike '*.md') { continue }
-            $seen[$rel] = $true
-            $prev = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.Encoding]::UTF8
-            $text = Invoke-Git show "$($ref):$rel" -AllowFail
-            [Console]::OutputEncoding = $prev
-            $runs.Add((ConvertFrom-RunText $text $rel $ref))
-        }
-    }
-    return $runs | Sort-Object Started -Descending
+    $root = Sync-History
+    $dir = Join-Path $root 'runs'
+    if (-not (Test-Path -LiteralPath $dir)) { return @() }
+    Get-ChildItem -LiteralPath $dir -Recurse -Filter '*.md' | ForEach-Object {
+        ConvertFrom-RunText (Get-Content -LiteralPath $_.FullName -Encoding UTF8) $_.FullName.Substring($root.Length + 1).Replace('\', '/')
+    } | Sort-Object Started -Descending
 }
 
 switch ($Command) {
@@ -76,7 +62,7 @@ switch ($Command) {
         if ($LASTEXITCODE -eq 0 -and $locks) { $locks | ForEach-Object { "  $_" } | Write-Host } else { Write-Host '  (none, or the remote has no LFS locking API)' }
 
         Write-Host "`n== Recent agent runs"
-        Get-Runs | Select-Object -First 10 | Format-Table Started, User, Agent, Task, Exit, Prompt, Where -AutoSize | Out-String -Width 220 | Write-Host
+        Get-Runs | Select-Object -First 10 | Format-Table Started, User, Agent, Task, Exit, Prompt -AutoSize | Out-String -Width 220 | Write-Host
     }
     'history' {
         $runs = Get-Runs
@@ -84,17 +70,18 @@ switch ($Command) {
         if ($Agent) { $runs = $runs | Where-Object { $_.Agent -eq $Agent } }
         if ($Task) { $runs = $runs | Where-Object { $_.Task -eq $Task } }
         if ($Days -gt 0) { $since = (Get-Date).AddDays(-$Days); $runs = $runs | Where-Object { [datetime]$_.Started -ge $since } }
-        $runs | Select-Object -First $Limit | Format-Table Started, User, Agent, Task, Exit, Prompt, Where, File -AutoSize | Out-String -Width 260 | Write-Host
+        $runs | Select-Object -First $Limit | Format-Table Started, User, Agent, Task, Exit, Prompt, File -AutoSize | Out-String -Width 260 | Write-Host
         if ($Task) {
             Write-Host "== Commits for $Task"
             Invoke-Git log --all --format='  %h %ad %an  %s' --date=short "--grep=Task: $Task" -AllowFail | Write-Host
         }
     }
     'run' {
-        if (-not $Arg) { throw 'Usage: tools\team.cmd run <History/runs/...md | run id>' }
-        $path = Join-Path $script:RepoRoot $Arg
+        if (-not $Arg) { throw 'Usage: tools\team.cmd run <runs/...md | run id | history:runs/...md>' }
+        $root = Sync-History
+        $path = Join-Path $root ($Arg -replace '^history:', '')
         if (-not (Test-Path -LiteralPath $path)) {
-            $hit = Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'History/runs') -Recurse -Filter "*$Arg*.md" | Select-Object -First 1
+            $hit = Get-ChildItem -LiteralPath (Join-Path $root 'runs') -Recurse -Filter "*$Arg*.md" -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $hit) { throw "Run $Arg not found." }
             $path = $hit.FullName
         }
