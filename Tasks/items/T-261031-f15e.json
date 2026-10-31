@@ -1,7 +1,7 @@
 {
   "id": "T-261031-f15e",
   "title": "Fix setup scripts: execute bits and safe re-run",
-  "status": "doing",
+  "status": "done",
   "priority": 2,
   "paths": [
     "tools/setup.sh",
@@ -19,6 +19,6 @@
   "assignee": "Claude",
   "agent": "claude",
   "branch": "task/T-261031-f15e-fix-setup-scripts-execute-bits",
-  "completedAt": null,
+  "completedAt": "2026-10-31T04:03:17.087202146+00:00",
   "notes": ""
 }
