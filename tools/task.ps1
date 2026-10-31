@@ -9,11 +9,16 @@
   tools\task.cmd claim T-261031-a1b2 -Agent codex       # lock it, create branch task/<id>
   tools\task.cmd claim T-261031-a1b2 -Worktree          # ...in its own worktree (parallel agents on one PC)
   tools\task.cmd show T-261031-a1b2                     # task, claim, runs and commits
-  tools\task.cmd done T-261031-a1b2                     # mark done on the task branch, release the claim
+  tools\task.cmd done T-261031-a1b2                     # mark done on the task branch; claim -> "review"
   tools\task.cmd release T-261031-a1b2                  # give it up without finishing
+  tools\task.cmd block T-261031-a1b2 -Note "why"        # keep the claim but flag it for a human
+
+  Claim lifecycle: claim (doing) -> done (review) -> PR merged or closed -> the release-claims GitHub
+  workflow deletes refs/claims/<id>. The claim is held until the PR is resolved, so nobody re-takes a task
+  whose finished work is still waiting for review.
 #>
 param(
-    [Parameter(Position = 0)][ValidateSet('list', 'new', 'claim', 'release', 'done', 'show')][string]$Command = 'list',
+    [Parameter(Position = 0)][ValidateSet('list', 'new', 'claim', 'release', 'done', 'block', 'show')][string]$Command = 'list',
     [Parameter(Position = 1)][string]$Arg,
     [string[]]$Paths,
     [int]$Priority = 3,
@@ -21,11 +26,16 @@ param(
     [string[]]$Accept,
     [ValidateSet('human', 'claude', 'codex', 'codex-local', 'strata')][string]$Agent = 'human',
     [switch]$Worktree,
+    [string]$Note,
     [switch]$Force,
     [switch]$All
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/team.ps1')
+
+# Via tools\task.cmd (powershell -File) "a,b" arrives as one string: accept commas as separators
+$Paths = @($Paths | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$Refs = @($Refs | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 function Get-DefaultBranch {
     $ref = Invoke-Git symbolic-ref --quiet refs/remotes/origin/HEAD -AllowFail | Select-Object -First 1
@@ -39,8 +49,9 @@ switch ($Command) {
         $rows = foreach ($t in (Get-AllTasks | Sort-Object priority, id)) {
             if (-not $All -and $t.status -eq 'done') { continue }
             $c = $claims | Where-Object { $_.Task -eq $t.id } | Select-Object -First 1
+            # A live claim is the truth for in-flight work (the task file on this branch may still say todo)
             [pscustomobject]@{
-                Id = $t.id; Status = if ($c -and $t.status -eq 'todo') { 'doing' } else { $t.status }; P = $t.priority
+                Id = $t.id; Status = if ($c) { $c.State } else { $t.status }; P = $t.priority
                 Owner = if ($c) { "$($c.User) ($($c.Agent))" } else { '' }; Title = $t.title
             }
         }
@@ -87,15 +98,9 @@ switch ($Command) {
         $slug = ($task.title -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLower()
         if ($slug.Length -gt 30) { $slug = $slug.Substring(0, 30).Trim('-') }
         $branch = if ($slug) { "task/$Arg-$slug" } else { "task/$Arg" }
-        $info = [ordered]@{ task = $Arg; user = $user.Name; agent = $Agent; claimed = (Get-Date).ToString('o'); branch = $branch; paths = $claimPaths }
-
-        # The claim is a commit with an empty tree whose message carries the claim; pushing it creates
-        # refs/claims/<id>. If someone else created that ref first, the push is rejected -> nobody double-claims.
-        $emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
-        $claimCommit = ($info | ConvertTo-Json -Compress) | & git -C $script:RepoRoot commit-tree $emptyTree -F -
-        if ($LASTEXITCODE -ne 0) { throw 'git commit-tree failed' }
-        $push = Invoke-Git push origin "$($claimCommit):refs/claims/$Arg" -AllowFail
-        if ($LASTEXITCODE -ne 0) { throw "Could not claim $Arg (someone may have claimed it a moment ago):`n$($push -join "`n")" }
+        $info = [ordered]@{ task = $Arg; user = $user.Name; agent = $Agent; claimed = (Get-Date).ToString('o'); state = 'doing'; branch = $branch; paths = $claimPaths }
+        $push = Publish-Claim $Arg $info
+        if (-not $push.Ok) { throw "Could not claim $Arg (someone may have claimed it a moment ago):`n$($push.Output)" }
 
         $default = Get-DefaultBranch
         if ($Worktree) {
@@ -135,15 +140,26 @@ switch ($Command) {
         Write-Host "Released claim on $Arg."
     }
 
-    'done' {
+    { $_ -in 'done', 'block' } {
+        # The claim is NOT released here: the task file says "done" only on this branch until the PR merges,
+        # so releasing now would let someone re-take finished work. The release-claims workflow deletes the
+        # claim when the PR is merged or closed. "block" keeps the claim and flags it for a human.
+        $user = Get-GitUser
+        $c = Get-RemoteClaims | Where-Object { $_.Task -eq $Arg } | Select-Object -First 1
+        if ($c -and $c.User -ne $user.Name -and -not $Force) { throw "$Arg is claimed by $($c.User), not you." }
         $t = Get-TaskById $Arg
-        $t.status = 'done'; $t.completedAt = (Get-Date).ToString('o')
+        if ($Command -eq 'done') { $t.status = 'done'; $t.completedAt = (Get-Date).ToString('o') }
+        else { $t.status = 'blocked'; if ($Note) { $t.notes = $Note } }
         Save-Task $t
         $null = Invoke-Git add -- "Tasks/items/$Arg.json"
-        $null = Invoke-Git commit -q -m "task($Arg): done -- $($t.title)" -m "Task: $Arg"
-        $c = Get-RemoteClaims | Where-Object { $_.Task -eq $Arg }
-        if ($c) { $null = Invoke-Git push origin ":refs/claims/$Arg" }
-        Write-Host "$Arg marked done and claim released. Push the branch and open a PR:"
+        $null = Invoke-Git commit -q -m "task($Arg): $($t.status) -- $($t.title)" -m "Task: $Arg"
+        if ($c) {
+            $state = if ($Command -eq 'done') { 'review' } else { 'blocked' }
+            $info = [ordered]@{ task = $Arg; user = $c.User; agent = $c.Agent; claimed = $c.Since; state = $state; branch = $c.Branch; paths = $c.Paths; updated = (Get-Date).ToString('o'); note = $Note }
+            $r = Publish-Claim $Arg $info -Update
+            if (-not $r.Ok) { Write-Warning "Could not update the claim state: $($r.Output)" }
+        }
+        Write-Host "$Arg is now '$($t.status)'; the claim stays until its PR is merged or closed. Push and open a PR:"
         Write-Host "  git push -u origin $(Get-CurrentBranch)"
     }
 

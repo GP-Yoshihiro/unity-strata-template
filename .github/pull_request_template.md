@@ -6,7 +6,7 @@ Task: T-
 
 ## Who / which agent
 - [ ] Human
-- [ ] Agent run(s) recorded in `History/runs/` (list them):
+- [ ] Agent run(s) recorded in the private history repo -- list only the references (`history:runs/...`), never the prompts:
   -
 
 ## Checks

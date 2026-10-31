@@ -21,8 +21,10 @@ Several humans and AI agents work here at the same time. Never start editing bef
 
 ## Finish
 1. `tools\unity.cmd test All` → exit 0; `tools\strata-index.cmd -Verify` → exit 0.
-2. `tools\task.cmd done <id>` (releases the claim), `git push -u origin <branch>`, open a PR and fill the template.
-3. Giving up instead: `tools\task.cmd release <id>`.
+2. `tools\task.cmd done <id>` (the claim moves to "review" and is released automatically when the PR is merged
+   or closed), `git push -u origin <branch>`, open a PR and fill the template. In the PR, reference agent runs only
+   as `history:runs/...` -- never paste prompts (this repository is public).
+3. Need a human decision: `tools\task.cmd block <id> -Note "why"`. Giving up instead: `tools\task.cmd release <id>`.
 
 ## Questions about the team
 - Who is doing what: `tools\team.cmd status`

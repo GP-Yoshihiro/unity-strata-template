@@ -1,0 +1,30 @@
+name: release-claims
+
+# A task claim (refs/claims/<id>, created by tools/task.* claim) is held while the work is in review and
+# released here once the task's PR is merged or closed. Until then nobody else can re-take the task.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: startsWith(github.head_ref, 'task/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the claim ref for this task
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          id=$(printf '%s' "$HEAD_REF" | sed -n 's#^task/\(T-[0-9]\{6\}-[0-9a-f]\{4\}\).*#\1#p')
+          if [ -z "$id" ]; then echo "No task id in $HEAD_REF"; exit 0; fi
+          if gh api -X DELETE "repos/$REPO/git/refs/claims/$id" >/dev/null 2>&1; then
+            echo "Released claim $id (PR merged: $MERGED)"
+          else
+            echo "No claim ref for $id (already released)"
+          fi

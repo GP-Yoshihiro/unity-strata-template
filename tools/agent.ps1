@@ -17,12 +17,15 @@
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)][ValidateSet('codex', 'codex-local', 'claude', 'strata')][string]$Agent,
-    [Parameter(Mandatory = $true, Position = 1)][string]$Prompt,
+    [Parameter(Position = 1)][string]$Prompt,
+    [string]$PromptFile,   # UTF-8 file instead of -Prompt (used by tools/loop.ps1 for multi-line prompts)
     [string]$Task,
     [switch]$NoRecord
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/team.ps1')
+if ($PromptFile) { $Prompt = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $PromptFile).Path, $script:Utf8) }
+if (-not $Prompt) { throw 'Give the instructions: tools\agent.cmd <agent> "prompt"  (or -PromptFile <utf8 file>)' }
 
 if (-not $Task) { $Task = Get-TaskIdFromBranch (Get-CurrentBranch) }
 

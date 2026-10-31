@@ -4,8 +4,9 @@ Unity Editor のバッチモード、AI エージェント（**Codex / Claude Co
 
 - どの端末で clone しても同じコマンドで動く（Unity・Strata・Codex は自動探索）
 - 複数の人間とエージェントが同時に作業しても衝突しない（タスクの claim、パス重複の拒否、フック、CI）
-- 誰が・どのエージェントに・どんな指示で作業させたかが履歴として残る（`History/runs` とコミットトレーラー）
+- 誰が・どのエージェントに・どんな指示で作業させたかが履歴として残る（**非公開**の履歴リポジトリとコミットトレーラー）
 - Strata のローカルモデルを Codex / Claude Code の配下で使い、クラウドのトークンを節約できる
+- `tools\loop.cmd` で、タスク選択 → 実装 → Unity テスト → PR を無人で繰り返せる
 
 ## 🚀 新しい端末でのセットアップ
 
@@ -33,9 +34,21 @@ tools\setup.cmd
 git clone https://github.com/GP-Yoshihiro/unity-strata-template.git && cd unity-strata-template && tools/setup.sh
 ```
 
-`setup` が行うこと（何度実行しても安全）: LFS 有効化、**チーム用 git フックの有効化**（`core.hooksPath=.githooks`）、Unity 検出、UnityYAMLMerge のマージドライバ登録、エージェントスキル同期、コンテキスト索引の再生成、Strata の有無の確認。
+**GitHub の「Download ZIP」で取得した場合** — 展開したフォルダ（浅い場所へ移動）で `tools\setup.cmd` を実行するだけです。git がない状態を検出して `git init` → 取得したファイルを最初のコミットに → **新規ブランチ `local/<あなたの名前>`** に切り替えます。ブランチ名や接続先は指定もできます。
+
+```powershell
+tools\setup.cmd -Branch feature/my-game -Remote https://github.com/<you>/<repo>.git
+```
+
+`setup` が行うこと（何度実行しても安全）: ZIP の場合の git 初期化と新規ブランチ作成、LFS 有効化、**チーム用 git フックの有効化**（`core.hooksPath=.githooks`）、**非公開・非表示の履歴フォルダ `.history/` の作成**、Unity 検出、UnityYAMLMerge のマージドライバ登録、エージェントスキル同期、コンテキスト索引の再生成、Strata の有無の確認。
 `tools\*.cmd` は PowerShell の実行ポリシーに関係なく動くラッパーです（`.ps1` を直接実行できない環境でも使えます）。
-`git config --global user.name` が未設定だと claim と履歴が使えないので、先に設定してください。
+`git config --global user.name` / `user.email` が未設定だと setup は止まります（claim と履歴に必要）。
+
+### 🔐 秘匿情報（指示文・会話・実行結果）の扱い
+- エージェントへの指示文と結果は、**公開リポジトリには一切入れず**、各 PC の隠しフォルダ `.history/` に保存します。
+- `.history/` は `.gitignore` 済みで、pre-commit フックも誤コミットを拒否します。Windows では「隠し」属性を付け、Codex のサンドボックス（`CodexSandboxUsers`）からは読めない設定にします。
+- `team.config.json` の `historyRepo`（既定: 非公開リポジトリ `GP-Yoshihiro/unity-strata-history`）にアクセスできるメンバーの PC では、`.history/` がその clone になり、チーム全員の実行記録を共有します。アクセスできない場合はその PC だけのローカル保存になります。
+- 新しいメンバーには、履歴リポジトリへのアクセス権（Collaborator）も付与してください。
 
 ## 👥 チームでの作業の流れ
 
@@ -44,9 +57,33 @@ tools\task.cmd list                                     # 未着手タスクと�
 tools\task.cmd claim T-261031-0001 -Agent codex          # 着手（原子的なロック + ブランチ task/<id>-... を作成）
 tools\agent.cmd codex-local "Prompts/unity_csharp_coder.md に従って実装して"   # エージェント実行（履歴付き）
 tools\unity.cmd test All                                 # テスト
-tools\task.cmd done T-261031-0001                        # 完了 → claim 解放
+tools\task.cmd done T-261031-0001                        # 完了 → claim は review 状態で保持
 git push -u origin HEAD                                  # → PR（テンプレートを埋める）
 ```
+
+claim の流れ: `claim`（doing）→ `done`（review）→ PR がマージ／クローズされると GitHub Actions（`release-claims`）が自動で解放。レビュー待ちの間に他の人が同じタスクを取り直すことはありません。人の判断が必要なときは `tools\task.cmd block <id> -Note "理由"`（blocked）。
+
+### 🌙 無人ループ（24 時間稼働）
+```powershell
+git clone https://github.com/GP-Yoshihiro/unity-strata-template.git C:\dev\unity-strata-agent
+```
+
+```powershell
+cd C:\dev\unity-strata-agent
+```
+
+```powershell
+tools\setup.cmd
+```
+
+```powershell
+tools\loop.cmd -Once
+```
+
+`tools\loop.cmd` は、未着手タスクの選択 → claim → ローカルモデルの Codex がコードを編集 → **ループ自身が（サンドボックスの外で）** `.meta` 生成・索引更新・Unity テスト → 失敗内容をエージェントに返して修正（既定 2 回まで）→ 成功なら PR、失敗が続けば draft PR ＋ `block`、を繰り返します。
+- 人がエディタで開かない **ループ専用の clone** を、浅いパス（`%TEMP%` 配下は不可）に用意してください。
+- `-Once`（1 件で終了）、`-MaxTasks n`、`-TestPlatform All`、`-Agent codex|claude`。停止は `tools\loop.cmd -Stop`（今のタスクを終えてから止まる）。ログは `Logs\loop.log`。
+- Strata が止まっていれば自動で `up` します。
 
 ### 衝突の回避（起きる前に止める）
 | 仕組み | 内容 |
@@ -77,8 +114,8 @@ gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protectio
 | 見たいもの | コマンド / 場所 |
 |---|---|
 | 今だれが何をしているか | `tools\team.cmd status`（claim、未着手タスク、LFS ロック、直近の実行） |
-| エージェントへの指示と結果 | `tools\team.cmd history [-Task id] [-User 名前] [-Agent codex-local] [-Days 7]` → `tools\team.cmd run <run-id>` で全文。未マージの他人のブランチの実行も表示 |
-| 実行記録そのもの | `History/runs/YYYY-MM/<日時>-<ユーザー>-<エージェント>-<タスク>.md`（ユーザー、エージェント、モデル、ブランチ、基点コミット、**プロンプト全文**、委譲内容、結果、変更ファイル） |
+| エージェントへの指示と結果 | `tools\team.cmd history [-Task id] [-User 名前] [-Agent codex-local] [-Days 7]` → `tools\team.cmd run <run-id>` で全文。実行開始時点で非公開リポジトリに送られるので、他の人の**実行中**の指示も見える |
+| 実行記録そのもの | `.history/runs/YYYY-MM/<日時>-<ユーザー>-<エージェント>-<タスク>.md`（非公開。ユーザー、エージェント、モデル、ブランチ、基点コミット、**プロンプト全文**、委譲内容、結果、変更ファイル） |
 | タスク単位のコミット | `git log --all --grep "Task: T-261031-0001"`、`tools\task.cmd show <id>` |
 | コミットの帰属 | トレーラー `Task:` / `Agent:` / `Run-Record:`（commit-msg フックが自動付与） |
 
@@ -166,11 +203,12 @@ gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protectio
 - `Assets/Scripts/Runtime/` ゲームコード（`Game.Runtime`）／ `Assets/Scripts/Editor/` バッチ入口（`Game.Editor`）
 - `Assets/Tests/EditMode/`, `Assets/Tests/PlayMode/` 自動テスト
 - `Tasks/items/` タスク（1 タスク 1 ファイル。仕様は `Tasks/README.md`）
-- `History/runs/` エージェント実行記録（誰が・何に・どんな指示で）
+- `.history/` 非公開・非表示のエージェント実行記録（git 管理外。非公開の履歴リポジトリと同期）
+- `team.config.json` 履歴リポジトリなどチーム共通の設定
 - `.strata/` `launch.json`（Strata の起動設定）, `cache_config.json`（層定義）, `strata_index.json`（コンテキストマップ）
 - `.githooks/` チーム共通の git フック／`.github/` CODEOWNERS・PR テンプレート・CI
 - `Prompts/` AI 指示書／`Reports/` 日計レポート／`Logs/` Unity CLI 出力（非コミット）
 - `tools/` Unity・Strata・Codex の起動、タスク・チーム・履歴、セットアップのスクリプト
 
 ## 🔒 コミットしないもの（端末ごとの設定）
-`Library/`, `Temp/`, `UserSettings/`, `Logs/*`, `.unity-path.local`, `.claude/settings.local.json`, `.codex-local/`, `.strata/stats.json`, `.strata/cache/`
+`Library/`, `Temp/`, `UserSettings/`, `Logs/*`, `.unity-path.local`, `.claude/settings.local.json`, `.codex-local/`, `.history/`, `.strata/stats.json`, `.strata/cache/`

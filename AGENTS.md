@@ -9,7 +9,7 @@
 - エディタ拡張/バッチ入口: `Assets/Scripts/Editor`（`Game.Editor.BatchEntry`）
 - テスト: `Assets/Tests/EditMode`, `Assets/Tests/PlayMode`
 - タスク: `Tasks/items/<id>.json`（1 タスク 1 ファイル。仕様は `Tasks/README.md`）
-- 実行履歴: `History/runs/YYYY-MM/<日時>-<ユーザー>-<エージェント>-<タスク>.md`（誰がどのエージェントにどんな指示を出したか）
+- 実行履歴: 非公開の別リポジトリ（`team.config.json` の `historyRepo`）。各 PC では隠しフォルダ `.history/`（git 管理外）に置かれ、`runs/YYYY-MM/<日時>-<ユーザー>-<エージェント>-<タスク>.md` が「誰がどのエージェントにどんな指示を出したか」の記録。**このリポジトリ（公開）には絶対に入れない。**
 - Strata（ローカル推論サーバー https://github.com/Niko1221/Strata）: 起動設定 `.strata/launch.json`
 - コンテキスト節約: `.strata/cache_config.json`（L1/L2/L3 の層定義）, `.strata/strata_index.json`（コンテキストマップ。本テンプレート独自で Strata 本体の機能ではない）
 - 指示書: `Prompts/unity_csharp_coder.md`（実装サイクル）, `Prompts/PROMPT_DAILY_IMPROVEMENT.md`（日次改善）
@@ -21,7 +21,8 @@
 | .meta 生成/再インポート | `tools\unity.cmd refresh` | `tools/unity.sh refresh` |
 | 任意メソッド実行 | `tools\unity.cmd exec Ns.Class.Method [args]` | `tools/unity.sh exec ...` |
 | コンテキスト索引 更新 / 検証 | `tools\strata-index.cmd` / `-Verify` | `pwsh tools/strata-index.ps1 [-Verify]` |
-| タスク一覧 / 作成 / 着手 / 完了 | `tools\task.cmd list` / `new` / `claim <id>` / `done <id>` | `pwsh tools/task.ps1 ...` |
+| タスク一覧 / 作成 / 着手 / 完了 / 保留 | `tools\task.cmd list` / `new` / `claim <id>` / `done <id>` / `block <id> -Note "理由"` | `pwsh tools/task.ps1 ...` |
+| 無人ループ（24 時間稼働） | `tools\loop.cmd` / `-Once` / `-Stop` | `pwsh tools/loop.ps1 ...` |
 | チーム状況 / 履歴 | `tools\team.cmd status` / `history` | `pwsh tools/team.ps1 ...` |
 | エージェント実行（履歴付き） | `tools\agent.cmd codex-local "指示"` | `pwsh tools/agent.ps1 ...` |
 | ローカルモデル 起動 / 状態 / 停止 | `tools\strata.cmd up` / `status` / `stop` | `pwsh tools/strata.ps1 ...` |
@@ -35,8 +36,9 @@
 3. **1 タスク = 1 ブランチ（`task/<id>-...`）= 1 PR。** default ブランチへの直接 push は pre-push フックで拒否される。並列で動くエージェントは `claim -Worktree` で別ワークツリーを使う。
 4. **シーン（`*.unity`）・プレハブは同時編集しない。** タスクの `paths` に明記して claim で守る。バイナリ素材（psd / fbx / blend）は `git lfs lock <file>` してから編集し、終わったら `git lfs unlock`。
 5. **コミットはフックが帰属を付ける。** `Task:`（ブランチ名から）、`Agent:` と `Run-Record:`（`tools\agent.cmd` 経由の実行時）。トレーラーを消さない。`--no-verify` は使わない。
-6. 作業を終えたら `tools\task.cmd done <id>` で claim を解放し、ブランチを push して PR を作る（テンプレートの項目を埋める）。途中で手放す場合は `release`。
+6. 作業を終えたら `tools\task.cmd done <id>`（claim は「review」状態になり、**PR がマージまたはクローズされるまで保持**される。解放は GitHub Actions `release-claims` が自動で行う）。ブランチを push して PR を作る（テンプレートの項目を埋める）。人の判断が必要なら `block <id> -Note "理由"`、途中で手放す場合は `release`。
 7. 他人の claim を `-Force` で解放・上書きしない（人間の判断が必要）。
+8. **秘匿情報（指示文・会話・実行結果）は `.history/` と非公開の履歴リポジトリにだけ置く。** 公開リポジトリのファイル、コミットメッセージ、PR 本文に指示文やトークン・個人情報を書かない（PR には `history:runs/...` の参照だけを書く）。
 
 ## 実装ルール
 1. **`.meta` を手で作成・編集・削除しない。** ファイル追加後は `refresh` で Unity に生成させ、`.meta` も一緒にコミット（pre-commit と CI が検査）。移動/削除は `exec Game.Editor.BatchEntry.MoveAsset -from <a> -to <b>` / `DeleteAsset -path <p>`。
@@ -53,15 +55,19 @@ Codex / Claude Code が指揮役、Strata のローカルモデルが作業役�
   例: `tools\strata.cmd ask "失敗原因を3行で" -File Logs\UnityTest-EditMode.log`
 - **まとまったサブタスク → `tools\agent.cmd codex-local "指示"`**: ローカルモデルの Codex に、claim 済みタスクの一部を任せる（必ず別ワークツリーで）。
 - 委譲結果は必ず自分で確認してから使う（ローカルモデルは小さく、誤りやすい）。設計判断・最終レビューは指揮役が行う。
-- `tools\agent.cmd` 経由の実行中に `ask` した内容は、同じ `History/runs` の記録に自動で追記される。
+- `tools\agent.cmd` 経由の実行中に `ask` した内容は、同じ実行記録（非公開の `.history/`）に自動で追記される。
 
 ## ローカルモデル（Strata）での 24 時間稼働
-- 長時間ループは `tools\agent.cmd codex-local` で回し、API 課金を発生させない（Codex の設定は `tools/templates/codex-local.config.toml`）。
+- 無人運用は `tools\loop.cmd` で行う：未着手タスクを選ぶ → claim → `codex-local` がコードを編集 → **ループ（サンドボックスの外）が** `.meta` 生成・索引更新・Unity テストを実行 → 失敗内容を渡して修正（`-MaxFixRounds` 回まで）→ 成功なら PR、失敗が続けば draft PR ＋ `block`。
+- ループ専用の clone（エディタで開かない、`C:\dev\<name>-agent` のような浅いパス、`%TEMP%` 配下は不可）で動かす。停止は `tools\loop.cmd -Stop`、ログは `Logs\loop.log`。
+- **ループから呼ばれたエージェントは、Unity・`tools\unity.*`・git commit/push を実行しない**（サンドボックスからは Unity を起動できない。実行はループが行う）。
+- 単発でローカルモデルを使うときは `tools\agent.cmd codex-local` を使う（API 課金なし。Codex の設定は `tools/templates/codex-local.config.toml`）。
 - コンテキストは `.strata/launch.json` の `context`（既定 64K）が上限。プロンプトは **L1 → L2 → L3 の順** に並べ、毎サイクル変わる内容（diff・ログ）は末尾に置く。先頭が毎回同一だとサーバーのプロンプトキャッシュが効く。
 - ログは全文を渡さない。`error CS\d{4}` や失敗テスト名だけ抽出して渡す。
 - Unity のバッチ実行とローカルモデルはメモリを取り合う。OOM に見える失敗は `tools\strata.cmd status` で確認。
 
 ## サンドボックス注意（Codex）
-Unity のバッチ実行はプロジェクト外（ライセンス、`%LOCALAPPDATA%\Unity`、パッケージ取得のネットワーク）にもアクセスします。
-サンドボックスで失敗した場合は、`tools/unity.*` の実行に昇格（承認付き実行）を求めてください。
+Unity のバッチ実行はプロジェクト外（ライセンス、`%APPDATA%\UnityHub`、`%LOCALAPPDATA%\Unity`、パッケージ取得のネットワーク）にアクセスするため、Codex の Windows サンドボックス内では動きません（検証済み）。
+テストは `tools\loop.cmd` に任せるか、人間が実行する。対話中に必要なら、`tools/unity.*` の実行に昇格（承認付き実行）を求める。
+`.history/` は Codex のサンドボックスから読めない設定（`CodexSandboxUsers` を拒否）。過去の指示を参照する必要はない。
 Windows の Codex サンドボックスは深いパスでカレントディレクトリを見失うことがあるため、リポジトリは `C:\dev\<name>` のような浅い場所に置く。
