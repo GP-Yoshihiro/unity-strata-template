@@ -93,7 +93,11 @@ elif command -v powershell >/dev/null 2>&1; then PS_EXE="powershell"; fi
 
 echo "== context index"
 if [ -n "$PS_EXE" ]; then "$PS_EXE" -NoProfile -ExecutionPolicy Bypass -File tools/strata-index.ps1
-else echo "warning: PowerShell (pwsh) not found; install it to rebuild the context index" >&2; fi
+else
+  echo "warning: PowerShell 7 (pwsh) not found. It is REQUIRED for tools/task.ps1 (claim), agent, loop, strata, team and try;" >&2
+  echo "         only hooks, history, skills and tools/unity.sh work without it. Install: https://learn.microsoft.com/powershell/scripting/install/installing-powershell" >&2
+  echo "         (macOS: brew install --cask powershell; Ubuntu: sudo snap install powershell --classic), then re-run tools/setup.sh" >&2
+fi
 
 echo "== strata (local model server)"
 if [ -n "$PS_EXE" ] && "$PS_EXE" -NoProfile -ExecutionPolicy Bypass -File tools/strata.ps1 version; then

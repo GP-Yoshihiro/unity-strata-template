@@ -154,3 +154,39 @@
 - `tools\*.cmd` と `bootstrap.cmd` は `-ExecutionPolicy Bypass` で PowerShell を起動します（このリポジトリのスクリプトを、実行ポリシーの設定に関係なく動かすため。一般的な手法です）。
 - ブートストラップは、確認を求めたうえで winget・npm・uv と各公式インストーラーからソフトを入れます。入れるものは画面に表示されます。
 - 既存のローカル Codex 設定（`tools/templates/codex-local.config.toml`）は、無人運用のため `approval_policy = "never"` で、サンドボックス内のネットワークも許可しています。信頼できないタスク本文を無人ループに渡さないでください。
+
+---
+
+## 6. 再検証（Linux 端末・2 回目）
+
+実施環境: Ubuntu 24.04 のクラウドコンテナ（git 2.43 / Git LFS 3.4 / Node 22 / Claude Code CLI あり。**pwsh・Unity・Unity Hub・Strata・GPU なし**）。pwsh の導入は外部バイナリの取得が許可されず不可。PowerShell 側は GitHub Actions（PR #3 の `checks`、`f551bd4` で成功＝全 `.ps1` の構文チェック・索引の検証を含む）と静的な読み込みで確認。
+
+### 6-1. 実行結果
+| 手順 | 結果 |
+|---|---|
+| clone して `tools/setup.sh`（1 回目・2 回目） | ✅ どちらも終了コード 0（約 0.5 秒）。フック有効化・LFS・`.history/`（権限 700、git 管理外）・スキル同期 |
+| ZIP 相当（`git archive` を展開）→ `setup.sh --remote <空のリポジトリ>` | ✅ `git init` → 最初のコミット → `local/<ユーザー名>` ブランチ。表示された初回 push コマンドで main とブランチを push できた。再実行も 0 |
+| 非公開の履歴リポジトリ | アクセス不可 → 警告してローカル保存に切り替わる（想定どおり） |
+| pre-commit: `.meta` なしの `.cs` を追加 | ✅ 拒否 |
+| pre-push: main への直接 push | ✅ 拒否（タスクブランチは通る） |
+| commit-msg: `task/<id>-...` ブランチ | ✅ `Task: T-261031-0001` が付く |
+| `unity.sh test`（Unity なし） | ✅ 終了コード 1 と案内。`install` は Unity Hub なしで 1 |
+| `unity.sh test`（Linux の既定パス `~/Unity/Hub/Editor/<版>/Editor/Unity` に偽エディタ） | ✅ 検出。合格 → 0、失敗 → 2（失敗テスト名を表示）、結果 XML なし → 1、`All` → 0、`UNITY_TIMEOUT_MINUTES=0` → 0。`Logs/` は git に出ない |
+| CI 相当の検査をローカルで（実行権限・`bash -n`・`.cmd` の `/dev/null`・`.ps1` の ASCII・JSON の妥当性・タスクファイル・`check-meta.sh`） | ✅ すべて合格 |
+| コンテキスト索引（Python で同じハッシュ計算） | ✅ 9 ファイル、過不足・不一致なし |
+
+### 6-2. 指摘
+| | 内容 | 対応 |
+|---|---|---|
+| 🟠 | **macOS / Linux で pwsh が無いと、setup は「Setup complete」で終わるのに `task claim`・`agent`・`loop`・`strata`・`team`・`try` が一切使えない**（チームルール 1 の claim ができない）。setup.sh の警告は「索引の再生成に必要」とだけ書いており、必須だと分からない | ✅ setup.sh の警告を「必須。pwsh なしで動くのはフック・履歴・スキル・`unity.sh` だけ」に変更し、macOS / Ubuntu の導入コマンドを表示 |
+| 🟡 | pre-commit は pwsh が無いと **C# を変更しても索引の検査を黙って飛ばす**（実際に古い索引のままコミットが通った）。CI で止まるので壊れはしないが、PR を出してから気付くことになる | ✅ ブロックはせず（CI が同じ検査をする）、警告を表示するように変更 |
+| 🟡 | Unity が無いとき、setup.sh は同じ内容を `error:` と `warning:` で 2 回表示する | 表示だけの問題。未対応 |
+| 🟡 | `tools/unity.sh` を引数なしで実行すると、使い方の表示ではなく EditMode テストが始まる（既定が `test`） | 未対応（既存の挙動を変えない） |
+| 🟡 | pre-push は `main` / `master` を固定で守る。`team.config.json` の `defaultBranch` を別名にするとその枝は守られない | 未対応。`defaultBranch` を変える場合は pre-push も合わせて変更を |
+| 🟡 | 「新規プロジェクト」チェックは origin が GitHub 以外（GitLab・ローカルのパス）だと所有者を取れず、常に警告が出る | 未対応（警告のみで害はない） |
+| 📝 | Linux の Unity Hub は apt リポジトリから入れる（`unity.com/download` の案内は Windows / macOS 向け）。Linux で `install` を使う人がいれば、案内に Linux の手順へのリンクを足すとよい | 提案 |
+
+### 6-3. まだ確認できていないこと（Windows の PC で要確認）
+- `bootstrap.cmd` を最初から最後まで通すこと（winget、`gh repo create`、Unity Hub CLI、Strata のモデル選択、spec-kit）。
+- `tools\setup.cmd` を 2 回、`tools\task.cmd claim` → `done`、`tools\unity.cmd test All`（実際の Unity とライセンス）、`tools\strata.cmd plan` / `up` / `check`、`tools\loop.cmd -Once`。
+- macOS / Linux で pwsh を入れた状態での `pwsh tools/task.ps1 claim`（前回直した `Test-SamePath` の確認を含む）。
