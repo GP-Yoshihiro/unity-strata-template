@@ -19,6 +19,7 @@
   tools\loop.cmd                         # run until stopped
   tools\loop.cmd -Once                   # one task, then exit (good first test)
   tools\loop.cmd -MaxTasks 5 -TestPlatform All
+  tools\loop.cmd -AgentTimeoutMinutes 20  # stop an agent run that takes longer (default 30)
   tools\loop.cmd -Stop
 #>
 param(
@@ -27,6 +28,7 @@ param(
     [ValidateSet('codex-local', 'codex', 'claude')][string]$Agent = 'codex-local',
     [ValidateSet('EditMode', 'PlayMode', 'All')][string]$TestPlatform = 'EditMode',
     [int]$IdleMinutes = 15,
+    [int]$AgentTimeoutMinutes = 30,
     [switch]$Once,
     [switch]$NoPR,
     [switch]$Stop
@@ -61,6 +63,30 @@ function Invoke-Tool([string]$Name, [scriptblock]$Block) {
 }
 
 function Get-ToolPath([string]$Script) { Join-Path $Tools $Script }
+
+function Invoke-AgentWithTimeout([string]$PromptText, [string]$TaskId) {
+    # The agent runs as a child process so a model that goes in circles cannot stall the loop forever:
+    # after -AgentTimeoutMinutes its whole process tree is killed and its run record is closed as a timeout.
+    $pf = Join-Path ([IO.Path]::GetTempPath()) ("loop-prompt-" + [Guid]::NewGuid().ToString('N') + '.txt')
+    [IO.File]::WriteAllText($pf, $PromptText, $script:Utf8)
+    $shell = (Get-Process -Id $PID).Path
+    $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$(Get-ToolPath 'agent.ps1')`" $Agent -PromptFile `"$pf`" -Task $TaskId"
+    $p = Start-Process -FilePath $shell -ArgumentList $argLine -NoNewWindow -PassThru
+    $null = $p.Handle   # keeps ExitCode readable after the process ends
+    try {
+        if ($p.WaitForExit($AgentTimeoutMinutes * 60 * 1000)) { return $p.ExitCode }
+        Write-Log "  agent exceeded $AgentTimeoutMinutes min; stopping it"
+        & taskkill.exe /PID $p.Id /T /F 2>&1 | Out-Null
+        $rec = Get-ChildItem -Path (Join-Path (Get-HistoryRoot) 'runs') -Recurse -Filter "*-$Agent-$TaskId.md" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($rec -and (Select-String -LiteralPath $rec.FullName -Pattern '^finished:\s*$' -Quiet)) {
+            Add-RunSection $rec.FullName 'Timeout' "Stopped by tools/loop.ps1 after $AgentTimeoutMinutes minutes."
+            Complete-RunRecord $rec.FullName 124
+            Publish-History "timeout $($rec.BaseName)"
+        }
+        return 124
+    } finally { Remove-Item -LiteralPath $pf -ErrorAction SilentlyContinue }
+}
 
 function Test-StrataUp {
     $port = (Get-Content -LiteralPath (Join-Path $script:RepoRoot '.strata/launch.json') -Raw | ConvertFrom-Json).port
@@ -174,7 +200,8 @@ while ($true) {
     for ($round = 0; $round -le $MaxFixRounds; $round++) {
         if (Test-Path -LiteralPath $StopFile) { break }
         Write-Log "  round $($round): running $Agent"
-        $null = Invoke-Tool 'agent' { & (Get-ToolPath 'agent.ps1') $Agent $prompt -Task $task.id }
+        $agentCode = Invoke-AgentWithTimeout $prompt $task.id
+        if ($agentCode -ne 0) { Write-Log "  agent exited with $agentCode" }
         $null = Invoke-Tool 'unity refresh' { & (Get-ToolPath 'unity.ps1') refresh }   # .meta for new files (outside the sandbox)
         $null = Invoke-Tool 'context index' { & (Get-ToolPath 'strata-index.ps1') }
         $testCode = Invoke-Tool 'unity test' { & (Get-ToolPath 'unity.ps1') test $TestPlatform }

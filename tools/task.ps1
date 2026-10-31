@@ -33,6 +33,10 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/team.ps1')
 
+# Via tools\task.cmd (powershell -File) "a,b" arrives as one string: accept commas as separators
+$Paths = @($Paths | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$Refs = @($Refs | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
 function Get-DefaultBranch {
     $ref = Invoke-Git symbolic-ref --quiet refs/remotes/origin/HEAD -AllowFail | Select-Object -First 1
     if ($ref -and $ref -like 'refs/remotes/origin/*') { return $ref.Substring('refs/remotes/origin/'.Length) }
