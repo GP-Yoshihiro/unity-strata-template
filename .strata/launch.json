@@ -1,0 +1,9 @@
+{
+  "description": "Local model served by Strata (https://github.com/Niko1221/Strata) for Codex / Claude Code. Used by tools/strata.ps1 up|plan.",
+  "family": "coder",
+  "model": "iq1_m",
+  "context": "64k",
+  "vision": "off",
+  "access": "local",
+  "port": 8080
+}

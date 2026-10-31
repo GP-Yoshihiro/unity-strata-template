@@ -8,7 +8,7 @@
 
 ## 🔍 入力データソース
 1. `Logs/UnityTest-EditMode.log` / `Logs/UnityTest-PlayMode.log`（コンパイルエラー・警告）と `Logs/*-results.xml`
-2. `.strata/stats.json`（コンテキストトークン消費量・キャッシュヒット率。存在しない場合は「計測なし」と記載）
+2. Strata サーバーの計測値: `http://127.0.0.1:8080/metrics`（プロンプト／生成トークン数、速度。`tools\strata.cmd status` でアドレス確認）。取得値は `.strata/stats.json` に追記保存してよい（非コミット）。サーバー停止中は「計測なし」と記載
 3. `Tasks/backlog.json` / `Tasks/completed.json`
 4. `git log --since="24 hours ago" --stat`
 
@@ -37,5 +37,5 @@
 
 ## ⚠️ 制約・注意事項
 - `.meta` ファイルを直接テキスト編集・削除しないこと。
-- Strataのキャッシュ設定更新後、`tools/strata-index.ps1` → `tools/strata-index.ps1 -Verify` を実行してインデックスの整合性を検証すること（`strata-cli` が PATH にあれば内部で `strata-cli verify` が使われる）。
+- 層設定（`.strata/cache_config.json`）更新後、`tools\strata-index.cmd` → `tools\strata-index.cmd -Verify` を実行してコンテキスト索引の整合性を検証すること。
 - レポートと設定変更は別コミットにすること。

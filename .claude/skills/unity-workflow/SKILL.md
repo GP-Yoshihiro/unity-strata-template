@@ -25,6 +25,13 @@ Never touch `.meta` files by hand:
 - `tools\unity.cmd exec Game.Editor.BatchEntry.MoveAsset -from Assets/Old.cs -to Assets/New/Old.cs`
 - `tools\unity.cmd exec Game.Editor.BatchEntry.DeleteAsset -path Assets/Old.cs`
 
+## Local model (Strata)
+Long-running loops use the local Strata server (`.strata/launch.json`), reached by Codex with `--profile strata`.
+- `tools\strata.cmd health` — is the server up and which model is loaded
+- `tools\strata.cmd up` / `stop` — start (downloads on first run) / unload and free memory
+- Keep prompts in L1 → L2 → L3 order (`.strata/cache_config.json`) so the unchanged prefix is served from the prompt cache;
+  pass extracted errors (`error CS\d{4}`, failed test names), not whole logs.
+
 ## Troubleshooting
 - "Unity Editor ... not found": install the version in `ProjectSettings/ProjectVersion.txt` with Unity Hub,
   or set `UNITY_EDITOR_PATH`, or write the path (absolute or repo-relative) into `.unity-path.local`.

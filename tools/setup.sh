@@ -34,10 +34,21 @@ mkdir -p .claude/skills
 cp -R .agents/skills/. .claude/skills/
 echo "Synced .agents/skills -> .claude/skills"
 
-echo "== strata"
-if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -File tools/strata-index.ps1
-elif command -v powershell >/dev/null 2>&1; then powershell -NoProfile -ExecutionPolicy Bypass -File tools/strata-index.ps1
-else echo "warning: PowerShell (pwsh) not found; install it to rebuild the Strata index" >&2; fi
+PS_EXE=""
+if command -v pwsh >/dev/null 2>&1; then PS_EXE="pwsh"
+elif command -v powershell >/dev/null 2>&1; then PS_EXE="powershell"; fi
+
+echo "== context index"
+if [ -n "$PS_EXE" ]; then "$PS_EXE" -NoProfile -ExecutionPolicy Bypass -File tools/strata-index.ps1
+else echo "warning: PowerShell (pwsh) not found; install it to rebuild the context index" >&2; fi
+
+echo "== strata (local model server)"
+if [ -n "$PS_EXE" ] && "$PS_EXE" -NoProfile -ExecutionPolicy Bypass -File tools/strata.ps1 version; then
+  echo "Next: pwsh tools/strata.ps1 plan, then pwsh tools/strata.ps1 up"
+else
+  echo "warning: Strata Terminal not installed (optional, for local-model runs). Install:" >&2
+  echo "  curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh" >&2
+fi
 
 echo
 echo "Setup complete. Try: tools/unity.sh test EditMode"

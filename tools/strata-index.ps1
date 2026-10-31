@@ -3,36 +3,21 @@
   Build or verify .strata/strata_index.json (the codebase context map).
 
 .DESCRIPTION
-  If `strata-cli` is on PATH it is used (`strata-cli index` / `strata-cli verify`).
-  Otherwise a built-in indexer produces a compatible map: one entry per file with its
-  cache layer (from .strata/cache_config.json), content hash, assembly, namespace and
-  declared types. Each type gets a stable reference id "cs:<Namespace>.<Type>" that tasks
-  and prompts can cite instead of pasting code.
+  This index belongs to this template, not to the Strata inference server. It keeps agent prompts small:
+  one entry per file with its context layer (from .strata/cache_config.json), content hash, assembly,
+  namespace and declared types. Each type gets a stable reference id "cs:<Namespace>.<Type>" that tasks
+  and prompts cite instead of pasting code.
 
 .EXAMPLE
   ./tools/strata-index.ps1            # rebuild the index
   ./tools/strata-index.ps1 -Verify    # exit 1 if the index is stale (use before commit / in CI)
-  ./tools/strata-index.ps1 -Builtin   # force the built-in indexer even if strata-cli exists
 #>
-param([switch]$Verify, [switch]$Builtin)
+param([switch]$Verify)
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Config = Get-Content -LiteralPath (Join-Path $RepoRoot '.strata/cache_config.json') -Raw | ConvertFrom-Json
 $OutPath = Join-Path $RepoRoot $Config.index.out
-
-$cli = Get-Command 'strata-cli' -ErrorAction SilentlyContinue
-if ($cli -and -not $Builtin) {
-    Push-Location $RepoRoot
-    try {
-        if ($Verify) { & $cli.Source verify; exit $LASTEXITCODE }
-        foreach ($root in $Config.index.roots) {
-            & $cli.Source index --path "$root/" --out $Config.index.out
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        }
-        exit 0
-    } finally { Pop-Location }
-}
 
 function ConvertTo-GlobRegex([string]$glob) {
     $sb = New-Object System.Text.StringBuilder '^'

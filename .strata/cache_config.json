@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Strata hierarchical context cache layout. Layers are matched top to bottom; the first matching layer wins.",
+  "description": "Context layers for agent prompts. Put L1 first, then L2, then L3 so the stable part of every prompt is an identical prefix the local Strata server can reuse from its prompt cache; only L3 changes per cycle. Layers are matched top to bottom; the first matching layer wins.",
   "layers": [
     {
       "id": "L1",

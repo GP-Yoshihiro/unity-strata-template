@@ -4,7 +4,8 @@
   - checks git / git-lfs, enables LFS hooks for this repo
   - locates the Unity Editor and registers UnityYAMLMerge as a merge driver (repo-local git config)
   - syncs the shared agent skill (.agents/skills -> .claude/skills)
-  - rebuilds the Strata index
+  - rebuilds the context index (.strata/strata_index.json)
+  - reports whether the Strata local model server is installed
 #>
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -45,8 +46,16 @@ try {
     Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force
     Write-Host "Synced $src -> $dst"
 
-    Write-Host '== strata'
+    Write-Host '== context index'
     & (Join-Path $PSScriptRoot 'strata-index.ps1')
+
+    Write-Host '== strata (local model server)'
+    try {
+        & (Join-Path $PSScriptRoot 'strata.ps1') version
+        Write-Host 'Next: tools\strata.cmd plan, then tools\strata.cmd up'
+    } catch {
+        Write-Warning "Strata Terminal not installed (optional, for local-model runs). Install: $(& (Join-Path $PSScriptRoot 'strata.ps1') install)"
+    }
 
     Write-Host "`nSetup complete. Try: tools\unity.cmd test EditMode"
 } finally { Pop-Location }
