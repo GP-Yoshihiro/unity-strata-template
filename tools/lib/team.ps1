@@ -101,22 +101,35 @@ function Get-HistoryRoot {
 }
 
 function Protect-PrivateFolder([string]$Dir) {
-    # Hidden + readable only by the current user (and SYSTEM). Never part of the project's git (see .gitignore).
-    # Agent sandboxes run as a different Windows user, so they cannot read past prompts either.
+    # Hidden folder, never part of the project's git (.gitignore + pre-commit), synced only to the private repo.
+    # Windows: keeps your normal (inherited) permissions -- tools you start, including sandboxed app terminals,
+    # still need them -- and adds a deny rule for Codex's sandbox group so autonomous agents can neither read
+    # past prompts nor rewrite the record. (Removing inheritance instead locks out restricted app tokens.)
     $item = Get-Item -LiteralPath $Dir -Force
     $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
-    if ($onWindows) {
-        if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
-            $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
-            $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            & icacls.exe $Dir /inheritance:r /grant:r "$($me):(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /T /Q 2>&1 | Out-Null
-            $ErrorActionPreference = $prev
-            if ($LASTEXITCODE -ne 0) { Write-Warning "Could not restrict permissions on $Dir (icacls exit $LASTEXITCODE)." }
-        }
-    } else {
-        & chmod 700 $Dir
+    if (-not $onWindows) { & chmod 700 $Dir; return }
+    if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
+        $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
     }
+    $group = "$env:COMPUTERNAME\CodexSandboxUsers"
+    try { $null = ([Security.Principal.NTAccount]$group).Translate([Security.Principal.SecurityIdentifier]) } catch { return }  # no Codex sandbox on this PC
+    $acl = Get-Acl -LiteralPath $Dir
+    $denied = $acl.Access | Where-Object { $_.AccessControlType -eq 'Deny' -and $_.IdentityReference.Value -like '*CodexSandboxUsers' }
+    if (-not $denied) {
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        & icacls.exe $Dir /deny "$($group):(OI)(CI)F" /Q 2>&1 | Out-Null
+        $ErrorActionPreference = $prev
+        if ($LASTEXITCODE -ne 0) { Write-Warning "Could not add the agent-sandbox deny rule on $Dir (icacls exit $LASTEXITCODE)." }
+    }
+}
+
+function Test-HistoryRepo([string]$Dir) {
+    # True only when $Dir is the top of its own git repository. Without this check, a history folder git cannot
+    # read would make `git -C <dir>` fall through to the project repo and commit there.
+    if (-not (Test-Path -LiteralPath (Join-Path $Dir '.git'))) { return $false }
+    $top = Invoke-GitIn $Dir rev-parse --show-toplevel | Select-Object -First 1
+    if ($LASTEXITCODE -ne 0 -or -not $top) { return $false }
+    return ([IO.Path]::GetFullPath($top.Replace('/', '\')).TrimEnd('\') -ieq [IO.Path]::GetFullPath($Dir).TrimEnd('\'))
 }
 
 function Sync-History {
@@ -124,8 +137,10 @@ function Sync-History {
     # team.config.json names one you can access, otherwise keep records local only.
     $cfg = Get-TeamConfig
     $dir = Get-HistoryRoot
-    $isRepo = Test-Path -LiteralPath (Join-Path $dir '.git')
-    if ($cfg.historyRepo -and -not $isRepo -and -not (Test-Path -LiteralPath (Join-Path $dir 'runs'))) {
+    $isRepo = Test-HistoryRepo $dir
+    if ($cfg.historyRepo -and -not $isRepo -and (Test-Path -LiteralPath (Join-Path $dir '.git'))) {
+        Write-Warning "$dir\.git exists but git cannot use it (permissions?). History stays local until fixed: icacls `"$dir`" /reset /T"
+    } elseif ($cfg.historyRepo -and -not $isRepo -and -not (Test-Path -LiteralPath (Join-Path $dir 'runs'))) {
         $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
         if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Force -Recurse }   # empty placeholder from an earlier offline run
         & git clone -q $cfg.historyRepo $dir 2>&1 | Out-Null
@@ -143,7 +158,7 @@ function Publish-History([string]$Message) {
     # Commit and push new/changed records; retries on concurrent pushes (each run is its own file, so rebase never conflicts).
     $cfg = Get-TeamConfig
     $dir = Get-HistoryRoot
-    if (-not $cfg.historyRepo -or -not (Test-Path -LiteralPath (Join-Path $dir '.git'))) { return }
+    if (-not $cfg.historyRepo -or -not (Test-HistoryRepo $dir)) { return }
     $null = Invoke-GitIn $dir add -A
     $null = Invoke-GitIn $dir -c "user.name=$((Get-GitUser).Name)" -c "user.email=$((Get-GitUser).Email)" commit -q -m $Message
     for ($i = 0; $i -lt 3; $i++) {
@@ -242,19 +257,38 @@ function Save-Task($Task) {
 # claim ref, our push is rejected. That makes it a lock that needs no merge and no shared file.
 
 function Get-RemoteClaims {
-    $lines = Invoke-Git ls-remote origin 'refs/claims/*' -AllowFail
+    # One fetch mirrors all claim refs (deleted claims are pruned), then each claim's JSON is read locally.
+    $null = Invoke-Git fetch -q --prune origin '+refs/claims/*:refs/remotes/claims/*' -AllowFail
     $claims = @()
-    foreach ($l in $lines) {
-        $parts = $l -split '\s+'
-        if ($parts.Count -lt 2 -or $parts[1] -notlike 'refs/claims/*') { continue }
-        $taskId = $parts[1].Substring('refs/claims/'.Length)
-        $null = Invoke-Git fetch -q origin "+$($parts[1]):refs/remotes/claims/$taskId" -AllowFail
-        $msg = (Invoke-Git log -1 --format=%B "refs/remotes/claims/$taskId" -AllowFail) -join "`n"
-        $info = $null
-        try { $info = ($msg.Substring($msg.IndexOf('{')) | ConvertFrom-Json) } catch { }
-        $claims += [pscustomobject]@{ Task = $taskId; User = $info.user; Agent = $info.agent; Since = $info.claimed; Paths = @($info.paths); Branch = $info.branch }
-    }
+    $prevEnc = [Console]::OutputEncoding; [Console]::OutputEncoding = $script:Utf8
+    try {
+        foreach ($ref in (Invoke-Git for-each-ref --format='%(refname)' refs/remotes/claims -AllowFail)) {
+            if ($ref -notlike 'refs/remotes/claims/*') { continue }
+            $taskId = $ref.Substring('refs/remotes/claims/'.Length)
+            $msg = (Invoke-Git log -1 --format=%B $ref -AllowFail) -join "`n"
+            $info = $null
+            try { $info = ($msg.Substring($msg.IndexOf('{')) | ConvertFrom-Json) } catch { }
+            $state = if ($info.state) { $info.state } else { 'doing' }
+            $claims += [pscustomobject]@{ Task = $taskId; User = $info.user; Agent = $info.agent; Since = $info.claimed; State = $state; Paths = @($info.paths); Branch = $info.branch }
+        }
+    } finally { [Console]::OutputEncoding = $prevEnc }
     return $claims
+}
+
+function Publish-Claim([string]$TaskId, $Info, [switch]$Update) {
+    # The claim is a commit with an empty tree whose message is the claim JSON, pushed as refs/claims/<id>.
+    # Creating that ref is atomic on the server: if someone else created it first our push is rejected.
+    # -Update replaces our own claim (state change), which needs a forced ref update.
+    $file = Join-Path ([IO.Path]::GetTempPath()) ("claim-" + [Guid]::NewGuid().ToString('N') + '.json')
+    [IO.File]::WriteAllText($file, ($Info | ConvertTo-Json -Compress), $script:Utf8)   # file, not a pipe: keeps non-ASCII names intact on PS 5.1
+    try {
+        $emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        $sha = Invoke-Git commit-tree $emptyTree -F $file | Select-Object -Last 1
+    } finally { Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue }
+    $refspec = "$($sha):refs/claims/$TaskId"
+    if ($Update) { $refspec = "+$refspec" }
+    $out = Invoke-Git push origin $refspec -AllowFail
+    return [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Output = ($out -join "`n") }
 }
 
 function Get-PathSegments([string]$Glob) {

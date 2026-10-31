@@ -1,19 +1,57 @@
 #!/usr/bin/env bash
-# Per-machine setup after cloning (macOS / Linux / Git Bash). Safe to re-run. See tools/setup.ps1.
+# Per-machine setup after cloning or downloading as ZIP (macOS / Linux / Git Bash). Safe to re-run.
+# See tools/setup.ps1. Usage: tools/setup.sh [--branch <name>] [--remote <url>]
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+BRANCH=""; REMOTE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --branch) BRANCH="$2"; shift 2 ;;
+    --remote) REMOTE="$2"; shift 2 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
 echo "== git"
 git --version
 git lfs version || { echo "git-lfs is not installed: https://git-lfs.com" >&2; exit 1; }
+USER_NAME="$(git config user.name || true)"
+[ -n "$USER_NAME" ] || { echo "git user.name is not set -- task claims and history need it: git config --global user.name \"<name>\"" >&2; exit 1; }
+
+# A "Download ZIP" copy has no .git: turn it into a repository and work on a new branch
+if [ ! -e "$REPO_ROOT/.git" ]; then   # .git is a folder in clones and a file in worktrees
+  echo "No git repository here (ZIP download): initialising one"
+  git init -q -b main
+  git add -A
+  git commit -q -m "Import unity-strata-template (ZIP download)"
+  [ -n "$BRANCH" ] || BRANCH="local/$(printf '%s' "$USER_NAME" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"
+  [ -z "$REMOTE" ] || { git remote add origin "$REMOTE"; echo "origin -> $REMOTE"; }
+fi
+if [ -n "$BRANCH" ]; then
+  git switch -q "$BRANCH" 2>/dev/null || git switch -q -c "$BRANCH"
+  echo "Working branch: $BRANCH"
+fi
+
 git lfs install --local >/dev/null
-git lfs pull
+[ -z "$(git remote)" ] || git lfs pull
 # Shared team hooks (meta check, attribution trailers, no direct push to main); they chain to LFS.
 git config --local core.hooksPath .githooks
 git config --local lfs.locksverify true
 echo "Team hooks enabled (.githooks)"
-git config user.name >/dev/null || echo "warning: git user.name is not set -- task claims and history need it" >&2
+
+echo "== private run history"
+HIST_REPO="$(sed -n 's/.*"historyRepo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' team.config.json 2>/dev/null | head -n1)"
+HIST_DIR="$REPO_ROOT/$(sed -n 's/.*"historyDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' team.config.json 2>/dev/null | head -n1)"
+[ "$HIST_DIR" != "$REPO_ROOT/" ] || HIST_DIR="$REPO_ROOT/.history"
+if [ -n "$HIST_REPO" ] && [ ! -d "$HIST_DIR/.git" ] && [ ! -d "$HIST_DIR/runs" ]; then
+  git clone -q "$HIST_REPO" "$HIST_DIR" 2>/dev/null || echo "warning: history repo $HIST_REPO not reachable; run records stay local" >&2
+fi
+mkdir -p "$HIST_DIR/runs"
+chmod 700 "$HIST_DIR"
+command -v attrib >/dev/null 2>&1 && attrib +h "$(cygpath -w "$HIST_DIR" 2>/dev/null || echo "$HIST_DIR")" >/dev/null 2>&1 || true
+echo "History folder: $HIST_DIR (hidden, ignored by git)"
 
 echo "== Unity"
 tools/find-unity.sh --list
