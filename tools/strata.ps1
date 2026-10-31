@@ -39,7 +39,8 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $OnWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
 $Launch = Get-Content -LiteralPath (Join-Path $RepoRoot '.strata/launch.json') -Raw | ConvertFrom-Json
-$base = "http://127.0.0.1:$($Launch.port)"
+$port = if ($Launch.port) { $Launch.port } else { 8080 }
+$base = "http://127.0.0.1:$port"
 
 function Find-Strata {
     if ($env:STRATA_EXE -and (Test-Path -LiteralPath $env:STRATA_EXE)) { return $env:STRATA_EXE }
@@ -111,8 +112,16 @@ if ($Command -eq 'ask') {
 $Strata = Find-Strata
 if (-not $Strata) { throw "Strata Terminal not found. Install it (official installer):`n  $installHelp`nor set STRATA_EXE to strata(.cmd)." }
 
-$modelArgs = @('--family', $Launch.family, '--model', $Launch.model, '--context', $Launch.context,
-    '--vision', $Launch.vision, '--access', $Launch.access, '--port', [string]$Launch.port)
+# Only --family / --model / --vision are documented for `strata launch`; anything else comes from "launchArgs"
+# (written by tools/bootstrap.ps1). Older launch.json files without launchArgs keep the previous flags.
+$modelArgs = @('--family', $Launch.family, '--model', $Launch.model)
+if ($Launch.vision) { $modelArgs += @('--vision', $Launch.vision) }
+if ($Launch.PSObject.Properties['launchArgs']) { $modelArgs += @($Launch.launchArgs | Where-Object { $_ }) }
+else {
+    if ($Launch.context) { $modelArgs += @('--context', $Launch.context) }
+    if ($Launch.access) { $modelArgs += @('--access', $Launch.access) }
+    if ($Launch.port) { $modelArgs += @('--port', [string]$Launch.port) }
+}
 
 switch ($Command) {
     'version' { & $Strata --version }

@@ -13,6 +13,7 @@
 - Strata（ローカル推論サーバー https://github.com/Niko1221/Strata）: 起動設定 `.strata/launch.json`
 - コンテキスト節約: `.strata/cache_config.json`（L1/L2/L3 の層定義）, `.strata/strata_index.json`（コンテキストマップ。本テンプレート独自で Strata 本体の機能ではない）
 - 指示書: `Prompts/unity_csharp_coder.md`（実装サイクル）, `Prompts/PROMPT_DAILY_IMPROVEMENT.md`（日次改善）
+- 仕様駆動開発: spec-kit（`.specify/`、`/speckit.*` コマンド）。原則は `.specify/memory/constitution.md`。`tasks.md` は `tools\task.cmd import` で `Tasks/items/` に起票してから claim する（spec-kit の `/speckit.implement` で claim せずに実装しない）
 - 既知の落とし穴: `Docs/agent-lessons.md`（**作業前に読む**。無人ループは毎回プロンプト先頭に入れる。日次の改善パスが draft PR で更新する）
 
 ## コマンド（端末非依存。Unity / Strata のパスは自動解決されるので絶対パスを書かない）
@@ -25,6 +26,10 @@
 | 任意メソッド実行 | `tools\unity.cmd exec Ns.Class.Method [args]` | `tools/unity.sh exec ...` |
 | コンテキスト索引 更新 / 検証 | `tools\strata-index.cmd` / `-Verify` | `pwsh tools/strata-index.ps1 [-Verify]` |
 | タスク一覧 / 作成 / 着手 / 完了 / 保留 | `tools\task.cmd list` / `new` / `claim <id>` / `done <id>` / `block <id> -Note "理由"` | `pwsh tools/task.ps1 ...` |
+| spec-kit の tasks.md をタスク化 | `tools\task.cmd import specs\<機能>\tasks.md` | `pwsh tools/task.ps1 import ...` |
+| 初期セットアップ（対話式） | `bootstrap.cmd` / `tools\bootstrap.ps1 -Step <名前>` | `pwsh tools/bootstrap.ps1` |
+| 動作確認（ファイル or プロンプト） | `tools\try.cmd -File <path>` / `tools\try.cmd "指示"` | `pwsh tools/try.ps1 ...` |
+| Unity パッケージ追加 | `tools\unity.cmd packages add <id>[,<id>]` | `tools/unity.sh packages add ...` |
 | 無人ループ（24 時間稼働） | `tools\loop.cmd` / `-Once` / `-Stop` | `pwsh tools/loop.ps1 ...` |
 | チーム状況 / 履歴 | `tools\team.cmd status` / `history` | `pwsh tools/team.ps1 ...` |
 | エージェント実行（履歴付き） | `tools\agent.cmd codex-local "指示"` | `pwsh tools/agent.ps1 ...` |

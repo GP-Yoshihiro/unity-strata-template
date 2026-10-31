@@ -8,6 +8,7 @@
   tools\agent.cmd codex-local "Implement T-261031-0001 following Prompts/unity_csharp_coder.md"
   tools\agent.cmd codex -Task T-261031-0001 "..."          # cloud Codex
   tools\agent.cmd claude "..."                             # Claude Code (claude -p)
+  tools\agent.cmd claude-local "..."                       # Claude Code driven by the local Strata model (experimental)
   tools\agent.cmd strata "Summarise Logs/UnityTest-EditMode.log"   # single local-model answer
 
   The task id defaults to the one in the current branch name (task/<id>-...).
@@ -16,7 +17,7 @@
     - work delegated with tools\strata.cmd ask is appended to the same record
 #>
 param(
-    [Parameter(Mandatory = $true, Position = 0)][ValidateSet('codex', 'codex-local', 'claude', 'strata')][string]$Agent,
+    [Parameter(Mandatory = $true, Position = 0)][ValidateSet('codex', 'codex-local', 'claude', 'claude-local', 'strata')][string]$Agent,
     [Parameter(Position = 1)][string]$Prompt,
     [string]$PromptFile,   # UTF-8 file instead of -Prompt (used by tools/loop.ps1 for multi-line prompts)
     [string]$Task,
@@ -61,6 +62,21 @@ switch ($Agent) {
         # Headless (-p) runs cannot answer permission prompts: allow file edits; shell commands stay limited to
         # .claude/settings.json allow rules, and its deny rules (.history, .meta, force push) still apply.
         $cmd = { Invoke-WithPromptFile $exe @('-p', '--permission-mode', 'acceptEdits') $promptFile }; $model = 'claude (default)'
+    }
+    'claude-local' {
+        # Claude Code against Strata's Anthropic-compatible API: no cloud tokens. Experimental -- small local
+        # models handle Claude Code's long tool prompts less reliably than the cloud models.
+        $exe = Find-Exe @('claude.cmd', 'claude.exe', 'claude') $null
+        if (-not $exe) { throw 'Claude Code CLI (claude) not found on PATH.' }
+        $launch = Get-Content -LiteralPath (Join-Path $script:RepoRoot '.strata/launch.json') -Raw | ConvertFrom-Json
+        $base = "http://127.0.0.1:$(if ($launch.port) { $launch.port } else { 8080 })"
+        try { $localModel = (Invoke-RestMethod "$base/v1/models" -TimeoutSec 10).data[0].id } catch { throw "Strata is not running at $base (tools\strata.cmd up)." }
+        $env:ANTHROPIC_BASE_URL = $base
+        $env:ANTHROPIC_AUTH_TOKEN = if ($env:STRATA_API_KEY) { $env:STRATA_API_KEY } else { 'strata-local' }
+        $env:ANTHROPIC_MODEL = $localModel
+        $env:ANTHROPIC_DEFAULT_HAIKU_MODEL = $localModel; $env:ANTHROPIC_SMALL_FAST_MODEL = $localModel
+        $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+        $cmd = { Invoke-WithPromptFile $exe @('-p', '--permission-mode', 'acceptEdits') $promptFile }; $model = "$localModel (Strata via Claude Code)"
     }
     'strata' {
         $cmd = { & (Join-Path $PSScriptRoot 'strata.ps1') ask $fullPrompt }

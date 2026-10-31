@@ -13,12 +13,13 @@
   ./tools/unity.ps1 install                      # install ProjectVersion.txt's editor with the Unity Hub CLI
   ./tools/unity.ps1 install 6000.6.7f1 --module windows-il2cpp   # extra args go to the Hub CLI
   ./tools/unity.ps1 upgrade 6000.7.1f1           # install + open the project once with that editor (on a task branch!)
+  ./tools/unity.ps1 packages add com.unity.inputsystem,com.unity.cinemachine   # Unity picks the right versions
 
   Exit codes: 0 ok, 2 tests failed, 124 timed out, other = Unity/setup error. Logs go to Logs/.
   UNITY_TIMEOUT_MINUTES (default 60, 0 = no limit) stops a hung batch run so unattended loops keep going.
 #>
 param(
-    [Parameter(Position = 0)][ValidateSet('path', 'test', 'refresh', 'exec', 'open', 'install', 'upgrade')][string]$Command = 'test',
+    [Parameter(Position = 0)][ValidateSet('path', 'test', 'refresh', 'exec', 'open', 'install', 'upgrade', 'packages')][string]$Command = 'test',
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest
 )
 
@@ -162,5 +163,11 @@ switch ($Command) {
     }
     'open' {
         Invoke-Unity @() -NoWait | Out-Null
+    }
+    'packages' {
+        if (-not $Rest -or $Rest[0] -ne 'add' -or $Rest.Count -lt 2) { throw 'Usage: unity.ps1 packages add <id>[,<id>...]' }
+        $ids = (@($Rest | Select-Object -Skip 1) -join ',') -replace '\s', ''
+        # No -quit: the Package Manager request is asynchronous; BatchEntry.AddPackages exits when it completes
+        exit (Invoke-Unity @('-batchmode', '-nographics', '-executeMethod', 'Game.Editor.BatchEntry.AddPackages', '-packages', $ids, '-logFile', (Join-Path $LogDir 'UnityPackages.log')))
     }
 }

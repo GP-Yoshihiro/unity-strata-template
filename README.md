@@ -8,7 +8,36 @@ Unity Editor のバッチモード、AI エージェント（**Codex / Claude Co
 - Strata のローカルモデルを Codex / Claude Code の配下で使い、クラウドのトークンを節約できる
 - `tools\loop.cmd` で、タスク選択 → 実装 → Unity テスト → PR を無人で繰り返せる
 
-## 🚀 新しい端末でのセットアップ
+## ⚡ ブートストラップ（推奨・すべて PowerShell から）
+
+ZIP を展開したフォルダ（または clone したフォルダ）で、PowerShell から 1 本実行するだけで、次の順に対話形式で進みます。途中でやめても、再実行すれば続きから再開します。
+
+```powershell
+.\bootstrap.cmd
+```
+
+| # | 手順 | 内容 |
+|---|---|---|
+| 1 | 前提ツール | Git / Git LFS / GitHub CLI を確認し、なければ winget で導入。git のユーザー名、GitHub ログイン |
+| 2 | **新規リポジトリ作成** | **リポジトリ名と公開設定（private / public / internal）を指定**して GitHub に作成。深い場所・Downloads にある場合は `C:\dev\<名前>` へ移動を提案。作者向けの設定（CODEOWNERS、README、履歴リポジトリ、製品名）を自分用に書き換え、非公開の履歴リポジトリも作成 |
+| 3 | **Unity の版の選択とインストール** | このひな形の版／**最新 LTS**／**最新 Update**／インストール済み／手入力から**選択**。ビルド用モジュールも選んで Unity Hub CLI で導入。版を変えた場合はプロジェクトを移行 |
+| 4 | **Strata とモデル選択** | Strata を導入し、**モデルを賢い順に、GPU 負荷（超高・高・中・低）とこの PC で動くか（o / ~ / x）付きで一覧表示**。選んだモデルは `strata launch --plan` で確認してから起動 |
+| 5 | **メイン AI と Strata の接続** | Claude Code / Codex（または両方）を導入し、Strata の実モデル ID でローカル Codex の設定を更新、往復テスト。24 時間ループで使うエージェントを決定 |
+| 6 | **Unity の開発環境** | IDE（VS / VS Code / Rider）、よく使うパッケージ（Input System、URP など）、初回インポートと EditMode テスト |
+| 7 | **スキル・プラグイン** | エージェントスキル、Claude Code プラグイン（プロジェクト共有）、**spec-kit**（仕様 → 計画 → タスク。このプロジェクト用の Constitution 付き） |
+| 8 | **使用の確認** | **指示を「ファイルのパス」か「プロンプト入力」で渡して**、エージェント → `.meta` 生成 → Unity テスト → 結果を見て draft PR／保持／破棄 |
+| 9 | 仕上げ | main ブランチの保護、結果のまとめ |
+
+- 個別にやり直す: `tools\bootstrap.ps1 -Step strata`（`prereq` `repo` `unity` `strata` `connect` `unitydev` `skills` `verify` `finish`）。最初から: `-Reset`
+- 非対話で一部を指定: `tools\bootstrap.ps1 -RepoName my-game -Visibility private -MainAI claude`
+- 動作確認はいつでも: `tools\try.cmd -File <指示ファイル>` / `tools\try.cmd "指示"` / `tools\try.cmd "質問" -Agent strata`（質問するだけ）
+- 画面の文言は `tools/bootstrap/messages.ja.json`、モデル一覧（順位・負荷・必要メモリ）は `tools/bootstrap/strata-models.json`、モジュール・パッケージ・プラグイン一覧は `tools/bootstrap/catalog.json` で編集できます。
+- **モデルの順位と負荷は目安**です（[Strata の MODELS.md](https://github.com/Niko1221/Strata/blob/main/docs/MODELS.md) の必要メモリ・品質の記述から作成）。
+
+### spec-kit（仕様駆動開発）との連携
+AI で `/speckit.specify`（仕様）→ `/speckit.plan`（計画）→ `/speckit.tasks`（タスク）を作ったら、`tools\task.cmd import specs\<機能>\tasks.md` で 1 項目 1 タスクとして `Tasks/items/` に起票されます（行に書かれた `Assets/...` などのパスが `paths` になり、claim の衝突検出に使われます）。あとは通常どおり claim して実装、または `tools\loop.cmd` に任せます。
+
+## 🚀 新しい端末でのセットアップ（手動）
 
 前提: Git + Git LFS、Unity Hub、PowerShell（Windows は標準。macOS/Linux は `pwsh`）。Unity エディタ本体は `setup` の後に `tools\unity.cmd install`（`tools/unity.sh install`）で `ProjectVersion.txt` と同じ版・changeset を Hub CLI から入れられます。バッチ実行には、その PC で一度 Unity Hub にサインインしてライセンスを有効化しておく必要があります。
 任意: [Codex CLI](https://www.npmjs.com/package/@openai/codex)（`npm.cmd install -g @openai/codex`）、Strata Terminal（下記）。

@@ -1,0 +1,30 @@
+{
+  "description": "Choices offered by tools/bootstrap.ps1 (edit to suit your team).",
+  "unityModules": [
+    { "id": "windows-il2cpp", "label": "Windows ビルド（IL2CPP）" },
+    { "id": "android", "label": "Android ビルド（SDK/NDK/JDK も入れる）", "childModules": true },
+    { "id": "ios", "label": "iOS ビルド" },
+    { "id": "webgl", "label": "Web（WebGL）ビルド" },
+    { "id": "mac-mono", "label": "macOS ビルド（Mono）" },
+    { "id": "linux-il2cpp", "label": "Linux ビルド（IL2CPP）" }
+  ],
+  "unityPackages": [
+    { "id": "com.unity.inputsystem", "label": "Input System（新しい入力）", "default": true },
+    { "id": "com.unity.ugui", "label": "uGUI + TextMeshPro" , "default": true },
+    { "id": "com.unity.render-pipelines.universal", "label": "URP（Universal Render Pipeline。導入後にパイプラインアセットの設定が必要）" },
+    { "id": "com.unity.cinemachine", "label": "Cinemachine（カメラ）" },
+    { "id": "com.unity.ai.navigation", "label": "AI Navigation（NavMesh）" },
+    { "id": "com.unity.timeline", "label": "Timeline" },
+    { "id": "com.unity.addressables", "label": "Addressables（アセット管理）" }
+  ],
+  "claudePlugins": [
+    { "id": "github", "label": "GitHub（PR・Issue 操作）", "default": true },
+    { "id": "unity", "label": "Unity（Unity 公式）", "default": true },
+    { "id": "unity-perf", "label": "unity-perf（パフォーマンス解析）", "default": true }
+  ],
+  "speckit": {
+    "package": "specify-cli",
+    "gitSource": "git+https://github.com/github/spec-kit.git",
+    "docs": "https://github.com/github/spec-kit"
+  }
+}

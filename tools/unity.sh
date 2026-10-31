@@ -3,6 +3,7 @@
 # Usage: tools/unity.sh path | test [EditMode|PlayMode|All] | refresh | exec <Method> [args...] | open
 #        tools/unity.sh install [version] [hub args...]   (Unity Hub CLI; default = ProjectVersion.txt)
 #        tools/unity.sh upgrade <version>                 (install + open once so Unity upgrades the project)
+#        tools/unity.sh packages add <id>[,<id>...]        (Unity picks the versions for this editor)
 # Exit codes: 0 ok, 2 tests failed, 124 timed out, other = Unity/setup error. Logs go to Logs/.
 # UNITY_TIMEOUT_MINUTES (default 60, 0 = no limit; needs `timeout`/`gtimeout`) stops a hung batch run.
 set -uo pipefail
@@ -113,5 +114,10 @@ case "$CMD" in
     run_unity -batchmode -nographics -quit -executeMethod "$method" -logFile "$(winpath "$LOG_DIR/UnityExec.log")" "$@" ;;
   open)
     "$UNITY" -projectPath "$PROJECT" >/dev/null 2>&1 & ;;
+  packages)
+    [ "${1:-}" = add ] && [ $# -ge 2 ] || { echo "usage: unity.sh packages add <id>[,<id>...]" >&2; exit 1; }
+    shift; ids="$(printf '%s' "$*" | tr ' ' ',' | tr -s ',')"
+    # no -quit: the Package Manager request is asynchronous; BatchEntry.AddPackages exits when it completes
+    run_unity -batchmode -nographics -executeMethod Game.Editor.BatchEntry.AddPackages -packages "$ids" -logFile "$(winpath "$LOG_DIR/UnityPackages.log")" ;;
   *) echo "unknown command: $CMD" >&2; exit 1 ;;
 esac

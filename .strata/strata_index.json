@@ -1,9 +1,9 @@
 {
   "schema": "strata-index/builtin-1",
   "generator": "tools/strata-index.ps1",
-  "contentHash": "240dc16d8ec6a579",
+  "contentHash": "4eb9c9b0a396f6df",
   "files": [
-    {"path":"Assets/Scripts/Editor/BatchEntry.cs","layer":"L2","hash":"f6739480c993315f","assembly":"Game.Editor","namespace":"Game.Editor","types":["BatchEntry"]},
+    {"path":"Assets/Scripts/Editor/BatchEntry.cs","layer":"L2","hash":"6cb6453b1241be6f","assembly":"Game.Editor","namespace":"Game.Editor","types":["BatchEntry"]},
     {"path":"Assets/Scripts/Editor/Game.Editor.asmdef","layer":"L1","hash":"d94b8a35ea4b1bd6","assembly":"Game.Editor"},
     {"path":"Assets/Scripts/Runtime/Game.Runtime.asmdef","layer":"L1","hash":"c780428857f7a14a","assembly":"Game.Runtime"},
     {"path":"Assets/Scripts/Runtime/GameBootstrap.cs","layer":"L2","hash":"845621bfb8b6e8b2","assembly":"Game.Runtime","namespace":"Game","types":["GameBootstrap"]},

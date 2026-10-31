@@ -90,7 +90,7 @@ function ConvertTo-PrettyJson($obj) {
 # ---------- Team config (team.config.json) ----------
 
 function Get-TeamConfig {
-    $cfg = [pscustomobject]@{ historyRepo = ''; historyDir = '.history'; defaultBranch = 'main'; staleClaimHours = 24 }
+    $cfg = [pscustomobject]@{ historyRepo = ''; historyDir = '.history'; defaultBranch = 'main'; staleClaimHours = 24; mainAgent = 'claude'; loopAgent = 'codex-local' }
     $path = Join-Path $script:RepoRoot 'team.config.json'
     if (Test-Path -LiteralPath $path) {
         $file = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json

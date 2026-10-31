@@ -12,19 +12,20 @@
   tools\task.cmd done T-261031-a1b2                     # mark done on the task branch; claim -> "review"
   tools\task.cmd release T-261031-a1b2                  # give it up without finishing
   tools\task.cmd block T-261031-a1b2 -Note "why"        # keep the claim but flag it for a human
+  tools\task.cmd import specs\001-jump\tasks.md          # spec-kit tasks.md -> one task file per open item
 
   Claim lifecycle: claim (doing) -> done (review) -> PR merged or closed -> the release-claims GitHub
   workflow deletes refs/claims/<id>. The claim is held until the PR is resolved, so nobody re-takes a task
   whose finished work is still waiting for review.
 #>
 param(
-    [Parameter(Position = 0)][ValidateSet('list', 'new', 'claim', 'release', 'done', 'block', 'show')][string]$Command = 'list',
+    [Parameter(Position = 0)][ValidateSet('list', 'new', 'claim', 'release', 'done', 'block', 'show', 'import')][string]$Command = 'list',
     [Parameter(Position = 1)][string]$Arg,
     [string[]]$Paths,
     [int]$Priority = 3,
     [string[]]$Refs,
     [string[]]$Accept,
-    [ValidateSet('human', 'claude', 'codex', 'codex-local', 'strata')][string]$Agent = 'human',
+    [ValidateSet('human', 'claude', 'claude-local', 'codex', 'codex-local', 'strata')][string]$Agent = 'human',
     [switch]$Worktree,
     [string]$Note,
     [switch]$Force,
@@ -167,6 +168,43 @@ switch ($Command) {
         }
         Write-Host "$Arg is now '$($t.status)'; the claim stays until its PR is merged or closed. Push and open a PR:"
         Write-Host "  git push -u origin $(Get-CurrentBranch)"
+    }
+
+    'import' {
+        # spec-kit (https://github.com/github/spec-kit) writes specs/<feature>/tasks.md with lines like
+        #   - [ ] T012 [P] [US1] Implement PlayerJump in Assets/Scripts/Runtime/Player/PlayerJump.cs
+        # Each open item becomes Tasks/items/<id>.json; repo paths in the line become the task's "paths".
+        if (-not $Arg -or -not (Test-Path -LiteralPath $Arg)) { throw 'Usage: tools\task.cmd import <path/to/tasks.md> [-Priority n]' }
+        $user = Get-GitUser
+        $src = (Resolve-Path -LiteralPath $Arg).Path
+        $rel = $src.Substring([Math]::Min($src.Length, $script:RepoRoot.Length)).TrimStart('\', '/').Replace('\', '/')
+        $existing = @(Get-AllTasks | ForEach-Object { "$($_.notes)" })
+        $lineRx = [regex]'^\s*[-*]\s*\[ \]\s*(T\d+)\s*((?:\[[^\]]+\]\s*)*)(.+?)\s*$'
+        $pathRx = [regex]'(?:Assets|Packages|ProjectSettings|Docs|Prompts|tools)/[^\s`''",;:()]+'
+        $made = 0; $skipped = 0
+        foreach ($line in (Get-Content -LiteralPath $src -Encoding UTF8)) {
+            $m = $lineRx.Match($line)
+            if (-not $m.Success) { continue }
+            $key = "speckit:$($rel)#$($m.Groups[1].Value)"
+            if ($existing | Where-Object { $_ -like "*$key*" }) { $skipped++; continue }
+            $desc = $m.Groups[3].Value.Trim()
+            $paths = @($pathRx.Matches($desc) | ForEach-Object { $_.Value.TrimEnd('.') } | Select-Object -Unique)
+            $title = if ($desc.Length -gt 90) { $desc.Substring(0, 90) + '...' } else { $desc }
+            $id = 'T-{0}-{1}' -f (Get-Date).ToString('yyMMdd'), ([Guid]::NewGuid().ToString('N').Substring(0, 4))
+            $task = [pscustomobject]@{
+                id = $id; title = $title; status = 'todo'; priority = $Priority
+                paths = $paths; strataRefs = @()
+                acceptance = @('tools/unity.cmd test EditMode exits 0', 'tools/strata-index.cmd -Verify exits 0')
+                createdBy = $user.Name; createdAt = (Get-Date).ToString('o')
+                assignee = $null; agent = $null; branch = $null; completedAt = $null
+                notes = "$key $($m.Groups[2].Value.Trim()) -- $desc"
+                _path = Join-Path (Get-TaskDir) "$id.json"
+            }
+            Save-Task $task
+            if (-not $paths) { Write-Warning "$id has no repo paths (claims cannot check overlaps): $title" }
+            $made++
+        }
+        Write-Host "Imported $made task(s) from $rel ($skipped already imported). Review paths, then commit Tasks/items and open a PR."
     }
 
     'show' {

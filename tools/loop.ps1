@@ -41,7 +41,7 @@
 param(
     [int]$MaxTasks = 0,
     [int]$MaxFixRounds = 2,
-    [ValidateSet('codex-local', 'codex', 'claude')][string]$Agent = 'codex-local',
+    [ValidateSet('', 'codex-local', 'codex', 'claude', 'claude-local')][string]$Agent = '',   # default: team.config.json loopAgent, else codex-local
     [ValidateSet('EditMode', 'PlayMode', 'All')][string]$TestPlatform = 'EditMode',
     [int]$IdleMinutes = 15,
     [int]$AgentTimeoutMinutes = 30,
@@ -60,6 +60,7 @@ $StopFile = Join-Path $LogDir 'loop.stop'
 $LoopLog = Join-Path $LogDir 'loop.log'
 $ImproveStamp = Join-Path $LogDir 'loop.last-improve'
 $LessonsFile = Join-Path $script:RepoRoot 'Docs/agent-lessons.md'
+if (-not $Agent) { $Agent = "$((Get-TeamConfig).loopAgent)"; if (-not $Agent) { $Agent = 'codex-local' } }
 $ImprovePaths = @('Docs/agent-lessons.md', 'Prompts', '.strata/cache_config.json', 'Reports', 'Tasks/items')
 
 if ($Stop) { New-Item -ItemType File -Force -Path $StopFile | Out-Null; Write-Host "Stop requested ($StopFile). The loop exits after the current task."; exit 0 }
@@ -119,7 +120,7 @@ function Test-StrataUp {
 }
 
 function Confirm-Strata {
-    if ($Agent -ne 'codex-local') { return $true }
+    if ($Agent -notin 'codex-local', 'claude-local') { return $true }
     if (Test-StrataUp) { return $true }
     Write-Log 'Strata is not running; starting it (tools\strata.cmd up)'
     $null = Invoke-Tool 'strata up' { & (Get-ToolPath 'strata.ps1') up }

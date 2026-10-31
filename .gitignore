@@ -49,6 +49,8 @@ desktop.ini
 .unity-path.local
 .env.local
 .claude/settings.local.json
+# Answers and progress of tools/bootstrap.ps1 on this machine
+.bootstrap.local.json
 
 # ===== Automation outputs =====
 # Logs/ is kept (via .gitkeep) but its contents are per-run artifacts.

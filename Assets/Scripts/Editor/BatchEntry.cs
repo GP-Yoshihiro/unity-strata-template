@@ -1,5 +1,6 @@
 using System;
 using UnityEditor;
+using UnityEditor.PackageManager;
 using UnityEngine;
 
 namespace Game.Editor
@@ -42,6 +43,31 @@ namespace Game.Editor
                 Debug.LogError($"[BatchEntry] DeleteAsset failed: {path}");
                 EditorApplication.Exit(1);
             }
+        }
+
+        /// <summary>
+        /// Add packages by name (Unity picks the version recommended for this editor) and exit when done.
+        /// Run WITHOUT -quit, the request is asynchronous. Usage:
+        /// -executeMethod Game.Editor.BatchEntry.AddPackages -packages com.unity.inputsystem,com.unity.cinemachine
+        /// </summary>
+        public static void AddPackages()
+        {
+            var ids = GetArg("-packages").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var request = Client.AddAndRemove(ids, null);
+            EditorApplication.update += () =>
+            {
+                if (!request.IsCompleted) return;
+                if (request.Status == StatusCode.Success)
+                {
+                    Debug.Log($"[BatchEntry] Packages added: {string.Join(", ", ids)}");
+                    EditorApplication.Exit(0);
+                }
+                else
+                {
+                    Debug.LogError($"[BatchEntry] AddPackages failed: {request.Error?.message}");
+                    EditorApplication.Exit(1);
+                }
+            };
         }
 
         private static string GetArg(string name)

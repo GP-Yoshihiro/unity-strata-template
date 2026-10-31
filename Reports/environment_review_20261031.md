@@ -94,3 +94,35 @@
 - paths の範囲判定（フォルダ、`*`、`**`、フォルダの `.meta`、タスク自身のファイル）を同じアルゴリズムの移植で 11 パターン。
 - コンテキスト索引: 保存済み contentHash の再現 → 更新後の値を検証。`check-meta.sh` OK。PowerShell の ASCII 検査 OK。
 - **未確認（pwsh・Unity・Strata がないため）**: PowerShell スクリプトの実行（CI の構文チェックで検証される）、Unity 実機でのテスト、Strata 実機。マージ前に Windows の PC で `tools\setup.cmd`（2 回）→ `tools\unity.cmd test All` → `tools\loop.cmd -Once` の確認を推奨。
+
+---
+
+## 4. 追加対応: 対話式ブートストラップ（ご要望の最終形）
+
+`bootstrap.cmd`（実体 `tools/bootstrap.ps1`）を PowerShell から 1 回実行すると、次の順に対話で進みます。各手順は `-Step <名前>` で個別にやり直せます。進み具合は `.bootstrap.local.json`（git 管理外）に保存されるので、中断しても続きから再開できます。
+
+| # | ご要望 | 実装 |
+|---|---|---|
+| 1 | PowerShell から環境立ち上げを実行 | `.\bootstrap.cmd`（ダブルクリックでも可）。Git / Git LFS / GitHub CLI がなければ winget で導入し、git のユーザー名設定と GitHub ログインも行う |
+| 2 | ひな形を新規リポジトリに（名前・公開設定） | 所有者（個人・組織）、**リポジトリ名**、**公開設定（private / public / internal）**を選んで `gh repo create`。ZIP を Downloads など深い場所に展開していたら `C:\dev\<名前>` へのコピーを提案。CODEOWNERS・README・`team.config.json`（非公開の履歴リポジトリ `<名前>-history` も作成）・製品名を自分用に書き換えて、最初の main を push。clone した場合、ひな形は remote `template` として残すので、ひな形の更新を取り込める |
+| 3 | Unity の版の選択とインストール（ユーザーが選ぶ） | 「このひな形の版／最新 LTS 2 件／最新 Update 2 件／インストール済み／手入力」から選択（Unity の公開リリース API を使い、取得できなければ手入力）。ビルド用モジュールも複数選択 → Unity Hub CLI でインストール → Hub を開いてライセンス有効化 → 版が違えば `upgrade` でプロジェクトを移行 |
+| 4 | Strata の立ち上げとモデル選択（賢さ順＋GPU 負荷） | Strata がなければ公式インストーラーで導入（確認あり）。GPU・VRAM・RAM・空き容量を調べ、`tools/bootstrap/strata-models.json` の 20 モデルを**賢い順**に表示。各モデルに **GPU 負荷（超高・高・中・低）**、必要メモリ、ダウンロード量、**この PC で動くか（o / ~ / x と理由）**を付け、動く中で最も賢いものをおすすめにする。選んだモデルは公式に記載のある `strata launch --plan` で確認してから起動 |
+| 5 | メイン AI と Strata の接続 | Claude Code / Codex / 両方を選択して CLI を導入。起動中の Strata から実際のモデル ID を取得してローカル Codex 設定（モデル名・文脈長）を更新し、`strata connect codex --check` と往復テストを行う。Claude Code からはスキル経由で `strata ask` を使う。Claude Code 自体をローカルモデルで動かす `claude-local`（実験的）も追加。24 時間ループのエージェントを選んで `team.config.json` に保存 |
+| 6 | Unity の開発環境整備 | IDE（VS は `.vsconfig` のワークロード追加、VS Code は Unity 拡張、Rider）、パッケージの複数選択（Input System、uGUI、URP、Cinemachine など。新しい `BatchEntry.AddPackages` でエディタに合った版を自動で選ぶ）、初回インポート、EditMode テスト、UnityYAMLMerge の登録 |
+| 7 | スキル・プラグイン（＋spec-kit） | エージェントスキルの同期、Claude Code プラグインを `--scope project` で入れてチームで共有。**spec-kit**: uv → `specify-cli` → `specify init --here`（使える引数はヘルプから自動判定）。このプロジェクト用の **Constitution**（Unity の作法・テスト先行・タスク分割・秘匿情報）を書き込み、`tools\task.cmd import <tasks.md>` で spec-kit のタスクを `Tasks/items` に起票できるようにした |
+| 8 | 使用の確認（ファイル or プロンプト） | `tools\try.cmd`。**指示書ファイルのパス**か**プロンプト入力**（複数行可）を選び、エージェントを選んで実行。Strata は回答だけ。ほかのエージェントは使い捨てタスクを claim → 編集 → `.meta` 生成 → Unity テスト → 範囲外の変更を表示 → 「draft PR／ブランチに残す／すべて破棄」。セットアップ後もいつでも使える |
+| 9 | 仕上げ | main ブランチの保護（PR 必須・`repo-checks` 必須）と結果のまとめ。保護をかけるまでは、ブートストラップのコミットを直接 main に push する（以降は PR 経由） |
+
+### 確認状況
+- **このコンテナで確認済み**:
+  - `unity.sh` の `install` / `upgrade` / `packages`（偽の Hub・エディタで）
+  - spec-kit の `tasks.md` 解析（正規表現を移植して 4 パターン）
+  - 画面文言のキーがすべて `messages.ja.json` にあること
+  - `.ps1` が ASCII であること
+  - コンテキスト索引のハッシュ
+- **未確認**（pwsh・Windows・GPU がないため）: `bootstrap.ps1` / `try.ps1` の実行そのもの（構文は CI の PowerShell 構文チェックで検証）。最初の 1 回は Windows で通しで実行し、止まった手順を `-Step` で再実行してください。
+- **公式情報で確認できず、実行時にフォールバックするもの**:
+  - Unity リリース API の `stream=LTS/TECH` → 取れなければ手入力
+  - Strata のモデル ID の大文字・小文字と `--context` → `--plan` で順に試す
+  - Claude Code プラグイン名（unity / unity-perf / github） → 失敗したら `/plugin` での手動導入を案内。一覧は `catalog.json` で変更可
+  - spec-kit の `--integration` / `--ai` → ヘルプから自動判定

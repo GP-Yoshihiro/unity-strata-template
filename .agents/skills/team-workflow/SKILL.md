@@ -10,6 +10,9 @@ Several humans and AI agents work here at the same time. Never start editing bef
 ## Start
 1. `tools\task.cmd list` — open tasks and who holds which claim.
 2. Pick a `todo` task (or create one: `tools\task.cmd new "title" -Paths <folders/files> -Refs cs:...`).
+   Specs written with spec-kit (`/speckit.specify` → `/speckit.plan` → `/speckit.tasks`) become tasks with
+   `tools\task.cmd import specs/<feature>/tasks.md` -- review the imported `paths`, commit `Tasks/items`, then claim.
+   Do not run `/speckit.implement` on unclaimed work.
 3. `tools\task.cmd claim <id> -Agent <claude|codex|codex-local>`; add `-Worktree` when another agent works in the same checkout.
    - "already claimed" or "Paths overlap" → do NOT work on it; pick another task or ask the user.
 4. You are now on branch `task/<id>-...`. Only edit the task's `paths`.
