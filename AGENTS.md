@@ -55,7 +55,7 @@ Codex / Claude Code が指揮役、Strata のローカルモデルが作業役�
   例: `tools\strata.cmd ask "失敗原因を3行で" -File Logs\UnityTest-EditMode.log`
 - **まとまったサブタスク → `tools\agent.cmd codex-local "指示"`**: ローカルモデルの Codex に、claim 済みタスクの一部を任せる（必ず別ワークツリーで）。
 - 委譲結果は必ず自分で確認してから使う（ローカルモデルは小さく、誤りやすい）。設計判断・最終レビューは指揮役が行う。
-- `tools\agent.cmd` 経由の実行中に `ask` した内容は、同じ `History/runs` の記録に自動で追記される。
+- `tools\agent.cmd` 経由の実行中に `ask` した内容は、同じ実行記録（非公開の `.history/`）に自動で追記される。
 
 ## ローカルモデル（Strata）での 24 時間稼働
 - 無人運用は `tools\loop.cmd` で行う：未着手タスクを選ぶ → claim → `codex-local` がコードを編集 → **ループ（サンドボックスの外）が** `.meta` 生成・索引更新・Unity テストを実行 → 失敗内容を渡して修正（`-MaxFixRounds` 回まで）→ 成功なら PR、失敗が続けば draft PR ＋ `block`。

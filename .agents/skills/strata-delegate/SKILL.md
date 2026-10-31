@@ -22,7 +22,7 @@ Poor fits: architecture decisions, subtle bugs, anything you cannot verify — k
 
 ## Larger sub-task → local Codex
 `tools\agent.cmd codex-local "<precise instructions incl. files and acceptance>"` — runs Codex on the local model
-in this checkout (use a separate worktree: `tools\task.cmd claim <id> -Worktree`). It is recorded in History/runs.
+in this checkout (use a separate worktree: `tools\task.cmd claim <id> -Worktree`). It is recorded in the private run history (.history/, see team.config.json).
 
 ## Rules
 - Always verify the worker's output (build/test it, read it) before committing. The local model is small and makes mistakes.

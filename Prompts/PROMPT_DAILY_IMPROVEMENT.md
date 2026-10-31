@@ -10,7 +10,7 @@
 1. `Logs/UnityTest-EditMode.log` / `Logs/UnityTest-PlayMode.log`（コンパイルエラー・警告）と `Logs/*-results.xml`
 2. Strata サーバーの計測値: `http://127.0.0.1:8080/metrics`（プロンプト／生成トークン数、速度。`tools\strata.cmd status` でアドレス確認）。取得値は `.strata/stats.json` に追記保存してよい（非コミット）。サーバー停止中は「計測なし」と記載
 3. `tools\task.cmd list -All`（`Tasks/items/*.json`）と `tools\team.cmd status`（進行中の claim）
-4. `tools\team.cmd history -Days 1`（誰がどのエージェントにどんな指示を出したか。詳細は `History/runs/`）
+4. `tools\team.cmd history -Days 1`（誰がどのエージェントにどんな指示を出したか。詳細は非公開の `.history/runs/`）
 5. `git log --since="24 hours ago" --stat`（`Task:` / `Agent:` トレーラーで集計できる）
 
 ---

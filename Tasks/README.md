@@ -14,5 +14,7 @@ different tasks never edit the same file. Use `tools\task.cmd` rather than editi
 | `createdBy`, `createdAt`, `completedAt`, `notes` | bookkeeping |
 
 **Who is working on what right now** is not in these files: it is the claim ref `refs/claims/<id>` on
-origin, created atomically by `tools\task.cmd claim` and removed by `done` / `release`.
+origin, created atomically by `tools\task.cmd claim`. Its state goes doing -> review (`done`) or blocked
+(`block`), and it is deleted by the `release-claims` GitHub workflow when the task's PR is merged or closed
+(or manually with `release`).
 `tools\task.cmd list` and `tools\team.cmd status` show both.
