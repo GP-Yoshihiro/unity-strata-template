@@ -1,0 +1,10 @@
+# Project-scoped Codex settings (applied when this project is trusted in Codex).
+# If your Codex version ignores project config, copy these keys into ~/.codex/config.toml
+# under [projects."<absolute path of this repo>"] or pass them with `codex -c key=value`.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+# Unity Package Manager resolves packages over the network during batch runs.
+network_access = true

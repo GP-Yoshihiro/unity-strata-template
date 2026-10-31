@@ -1,0 +1,20 @@
+{
+  "$schema_note": "Each task: id, title, status (todo|doing|blocked), priority (1=highest), strataRefs (ids from .strata/strata_index.json, e.g. cs:Game.MathUtil), acceptance (testable criteria), notes.",
+  "tasks": [
+    {
+      "id": "T-0001",
+      "title": "Replace sample MathUtil with the first real gameplay module",
+      "status": "todo",
+      "priority": 2,
+      "strataRefs": [
+        "cs:Game.MathUtil",
+        "cs:Game.Tests.MathUtilTests"
+      ],
+      "acceptance": [
+        "tools/unity.ps1 test EditMode exits 0",
+        "tools/strata-index.ps1 -Verify exits 0"
+      ],
+      "notes": "Template placeholder task. Delete or rewrite when the project starts."
+    }
+  ]
+}

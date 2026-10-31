@@ -1,0 +1,59 @@
+# ===== Unity generated =====
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/Assets/Plugins/Editor/JetBrains*
+/Assets/AssetStoreTools*
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+crashlytics-build.properties
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# ===== IDE =====
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Machine-local settings (do NOT commit) =====
+.unity-path.local
+.env.local
+.claude/settings.local.json
+
+# ===== Automation outputs =====
+# Logs/ is kept (via .gitkeep) but its contents are per-run artifacts.
+/Logs/*
+!/Logs/.gitkeep
+# Strata runtime data is per-machine; config + index are shared.
+/.strata/cache/
+/.strata/stats.json

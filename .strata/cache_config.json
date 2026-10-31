@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "description": "Strata hierarchical context cache layout. Layers are matched top to bottom; the first matching layer wins.",
+  "layers": [
+    {
+      "id": "L1",
+      "name": "Static Architecture & API",
+      "persistence": "persistent",
+      "refresh": "on-change",
+      "include": [
+        "AGENTS.md",
+        "Docs/**",
+        "Prompts/**",
+        "**/*.asmdef",
+        "Assets/Scripts/Runtime/Core/**",
+        "Assets/Scripts/Runtime/Data/**"
+      ]
+    },
+    {
+      "id": "L2",
+      "name": "Project Source Code",
+      "persistence": "persistent",
+      "refresh": "on-index",
+      "include": [
+        "Assets/Scripts/**/*.cs",
+        "Assets/Tests/**/*.cs"
+      ]
+    },
+    {
+      "id": "L3",
+      "name": "Dynamic Context",
+      "persistence": "per-cycle",
+      "refresh": "every-cycle",
+      "include": [
+        "Tasks/backlog.json",
+        "Logs/**",
+        "git:diff",
+        "git:log -n 20"
+      ]
+    }
+  ],
+  "index": {
+    "roots": [
+      "Assets/Scripts",
+      "Assets/Tests"
+    ],
+    "extensions": [
+      ".cs",
+      ".asmdef"
+    ],
+    "out": ".strata/strata_index.json"
+  }
+}

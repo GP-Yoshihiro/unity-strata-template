@@ -1,0 +1,45 @@
+# Normalize text files; scripts keep the line endings their shells need.
+* text=auto
+*.cs      text diff=csharp
+*.md      text
+*.json    text
+*.asmdef  text
+*.sh      text eol=lf
+*.ps1     text eol=crlf
+*.cmd     text eol=crlf
+
+# Unity YAML (force text serialization in Editor settings) — merge with UnityYAMLMerge if configured
+*.unity    text merge=unityyamlmerge eol=lf
+*.prefab   text merge=unityyamlmerge eol=lf
+*.asset    text merge=unityyamlmerge eol=lf
+*.mat      text merge=unityyamlmerge eol=lf
+*.anim     text merge=unityyamlmerge eol=lf
+*.controller text merge=unityyamlmerge eol=lf
+*.overrideController text merge=unityyamlmerge eol=lf
+*.physicMaterial text merge=unityyamlmerge eol=lf
+*.meta     text eol=lf
+
+# ===== Git LFS: binary assets =====
+*.png  filter=lfs diff=lfs merge=lfs -text
+*.jpg  filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.psd  filter=lfs diff=lfs merge=lfs -text
+*.tga  filter=lfs diff=lfs merge=lfs -text
+*.tif  filter=lfs diff=lfs merge=lfs -text
+*.exr  filter=lfs diff=lfs merge=lfs -text
+*.hdr  filter=lfs diff=lfs merge=lfs -text
+*.fbx  filter=lfs diff=lfs merge=lfs -text
+*.FBX  filter=lfs diff=lfs merge=lfs -text
+*.obj  filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.wav  filter=lfs diff=lfs merge=lfs -text
+*.mp3  filter=lfs diff=lfs merge=lfs -text
+*.ogg  filter=lfs diff=lfs merge=lfs -text
+*.mp4  filter=lfs diff=lfs merge=lfs -text
+*.mov  filter=lfs diff=lfs merge=lfs -text
+*.ttf  filter=lfs diff=lfs merge=lfs -text
+*.otf  filter=lfs diff=lfs merge=lfs -text
+*.dll  filter=lfs diff=lfs merge=lfs -text
+*.so   filter=lfs diff=lfs merge=lfs -text
+*.a    filter=lfs diff=lfs merge=lfs -text
+*.unitypackage filter=lfs diff=lfs merge=lfs -text
