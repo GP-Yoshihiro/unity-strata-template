@@ -82,7 +82,8 @@ switch ($Command) {
         $info = Get-ProjectVersionInfo
         $ver = if ($Rest -and $Rest[0] -notlike '-*') { $Rest[0] } else { $info.Version }
         $extra = @($Rest | Where-Object { $_ -ne $ver })
-        $changeset = if ($ver -eq $info.Version) { $info.Changeset } else { $null }
+        # The project's changeset only when the caller did not pass --changeset (Hub rejects it twice)
+        $changeset = if ($ver -eq $info.Version -and $extra -notcontains '--changeset') { $info.Changeset } else { $null }
         exit (Install-Editor $ver $changeset $extra)
     }
     'upgrade' {

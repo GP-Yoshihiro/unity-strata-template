@@ -1,9 +1,9 @@
 {
-  "description": "Local model served by Strata (https://github.com/Niko1221/Strata) for Codex / Claude Code. Used by tools/strata.ps1 up|plan.",
+  "description": "Local model served by Strata (https://github.com/Niko1221/Strata) for Codex / Claude Code. Used by tools/strata.ps1 up|plan as: strata launch --family <family> --model <model> --vision <vision> <launchArgs...>. Written by the environment-setup skill (step 3); port is where tools/strata, agent and loop look for the server.",
   "family": "coder",
   "model": "iq1_m",
-  "context": "64k",
   "vision": "off",
-  "access": "local",
-  "port": 8080
+  "port": 8080,
+  "contextTokens": 65536,
+  "launchArgs": ["--context", "64k", "--access", "local", "--port", "8080"]
 }
