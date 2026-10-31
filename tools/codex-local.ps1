@@ -10,10 +10,19 @@
 
 .EXAMPLE
   tools\codex-local.cmd                                  # interactive
-  tools\codex-local.cmd exec "task"                      # one-shot
+  tools\codex-local.cmd exec "task"                      # one-shot (single-line ASCII-safe prompt)
+  tools\codex-local.cmd -PromptFile prompt.txt exec -    # one-shot, multi-line / Japanese prompt from a UTF-8 file
 #>
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'lib/team.ps1')
+
+$CodexArgs = @($args)
+$PromptFile = $null
+if ($CodexArgs.Count -ge 2 -and $CodexArgs[0] -eq '-PromptFile') {
+    $PromptFile = (Resolve-Path -LiteralPath $CodexArgs[1]).Path
+    $CodexArgs = @($CodexArgs | Select-Object -Skip 2)
+}
 $CodexHome = Join-Path $RepoRoot '.codex-local'
 New-Item -ItemType Directory -Force -Path $CodexHome | Out-Null
 
@@ -30,4 +39,9 @@ if (-not $codex -and $env:APPDATA -and (Test-Path (Join-Path $env:APPDATA 'npm\c
 if (-not $codex) { throw 'Codex CLI not found. Install: npm.cmd install -g @openai/codex' }
 
 Push-Location $RepoRoot
-try { & $codex @args; exit $LASTEXITCODE } finally { Pop-Location }
+$ErrorActionPreference = 'Continue'   # Codex reports progress on stderr
+try {
+    if ($PromptFile) { Invoke-WithPromptFile $codex $CodexArgs $PromptFile }
+    else { & $codex @CodexArgs }
+    exit $LASTEXITCODE
+} finally { Pop-Location }

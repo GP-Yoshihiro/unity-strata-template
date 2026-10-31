@@ -4,7 +4,7 @@
   outcome in History/runs/ (one file per run, committed with the work).
 
 .EXAMPLE
-  tools\agent.cmd codex-local "Prompts/unity_csharp_coder.md に従って T-261031-0001 を実装して"
+  tools\agent.cmd codex-local "Implement T-261031-0001 following Prompts/unity_csharp_coder.md"
   tools\agent.cmd codex -Task T-261031-0001 "..."          # cloud Codex
   tools\agent.cmd claude "..."                             # Claude Code (claude -p)
   tools\agent.cmd strata "Summarise Logs/UnityTest-EditMode.log"   # single local-model answer
@@ -36,20 +36,24 @@ $header = "You are working in a shared team repository. Follow AGENTS.md."
 if ($Task) { $header += " Current task: $Task (Tasks/items/$Task.json). Only touch the paths listed there." }
 $fullPrompt = "$header`n`n$Prompt"
 
+# The CLIs read the prompt from a UTF-8 file on stdin (see Invoke-WithPromptFile): multi-line and
+# Japanese prompts survive Windows PowerShell 5.1 and the codex.cmd / claude.cmd batch shims intact.
+$promptFile = Join-Path ([IO.Path]::GetTempPath()) ("agent-prompt-" + [Guid]::NewGuid().ToString('N') + '.txt')
+[IO.File]::WriteAllText($promptFile, $fullPrompt, (New-Object Text.UTF8Encoding $false))
 switch ($Agent) {
     'codex' {
         $exe = Find-Exe @('codex.cmd', 'codex') (Join-Path "$env:APPDATA" 'npm\codex.cmd')
         if (-not $exe) { throw 'Codex CLI not found. Install: npm.cmd install -g @openai/codex' }
-        $cmd = { & $exe exec $fullPrompt }; $model = 'codex (cloud default)'
+        $cmd = { Invoke-WithPromptFile $exe @('exec', '-') $promptFile }; $model = 'codex (cloud default)'
     }
     'codex-local' {
-        $cmd = { & (Join-Path $PSScriptRoot 'codex-local.ps1') exec $fullPrompt }
+        $cmd = { & (Join-Path $PSScriptRoot 'codex-local.ps1') -PromptFile $promptFile exec - }
         $model = (Get-Content (Join-Path $PSScriptRoot 'templates/codex-local.config.toml') | Select-String '^model\s*=\s*"(.+)"').Matches[0].Groups[1].Value
     }
     'claude' {
         $exe = Find-Exe @('claude.cmd', 'claude.exe', 'claude') $null
         if (-not $exe) { throw 'Claude Code CLI (claude) not found on PATH.' }
-        $cmd = { & $exe -p $fullPrompt }; $model = 'claude (default)'
+        $cmd = { Invoke-WithPromptFile $exe @('-p') $promptFile }; $model = 'claude (default)'
     }
     'strata' {
         $cmd = { & (Join-Path $PSScriptRoot 'strata.ps1') ask $fullPrompt }
@@ -67,10 +71,17 @@ $env:AGENT_NAME = $Agent
 $env:AGENT_TASK = $Task
 
 $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-$output = & $cmd 2>&1 | ForEach-Object { $line = "$_"; Write-Host $line; $line }
-$code = $LASTEXITCODE
-$ErrorActionPreference = $prev
+# The CLIs write UTF-8; without this Windows PowerShell 5.1 decodes their output with the OEM code page
+$prevEnc = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
+try {
+    $output = & $cmd 2>&1 | ConvertTo-OutputLine | ForEach-Object { Write-Host $_; $_ }
+    $code = $LASTEXITCODE
+} finally {
+    [Console]::OutputEncoding = $prevEnc
+    $ErrorActionPreference = $prev
+}
 if ($null -eq $code) { $code = 0 }
+Remove-Item -LiteralPath $promptFile -ErrorAction SilentlyContinue
 
 if ($record) {
     Add-RunSection $record 'Result (tail)' (($output | Select-Object -Last 80) -join "`n") 6000

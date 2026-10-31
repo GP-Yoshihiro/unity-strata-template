@@ -1,48 +1,67 @@
 # AGENTS.md — AI エージェント共通ルール（Codex / Claude Code）
 
 このファイルが唯一の正本です。Codex は `AGENTS.md` を、Claude Code は `CLAUDE.md`（このファイルを import）を読みます。ルール変更はここだけに書いてください。
+このリポジトリは **複数の人間と複数の AI エージェントが同時に作業する** 前提です。
 
 ## プロジェクト概要
 - Unity プロジェクト（エディタ版は `ProjectSettings/ProjectVersion.txt` が正）。
 - ゲームコード: `Assets/Scripts/Runtime`（asmdef `Game.Runtime`, namespace `Game`）
 - エディタ拡張/バッチ入口: `Assets/Scripts/Editor`（`Game.Editor.BatchEntry`）
 - テスト: `Assets/Tests/EditMode`, `Assets/Tests/PlayMode`
+- タスク: `Tasks/items/<id>.json`（1 タスク 1 ファイル。仕様は `Tasks/README.md`）
+- 実行履歴: `History/runs/YYYY-MM/<日時>-<ユーザー>-<エージェント>-<タスク>.md`（誰がどのエージェントにどんな指示を出したか）
 - Strata（ローカル推論サーバー https://github.com/Niko1221/Strata）: 起動設定 `.strata/launch.json`
 - コンテキスト節約: `.strata/cache_config.json`（L1/L2/L3 の層定義）, `.strata/strata_index.json`（コンテキストマップ。本テンプレート独自で Strata 本体の機能ではない）
-- タスク: `Tasks/backlog.json` → 完了で `Tasks/completed.json`
 - 指示書: `Prompts/unity_csharp_coder.md`（実装サイクル）, `Prompts/PROMPT_DAILY_IMPROVEMENT.md`（日次改善）
 
-## コマンド（端末非依存。Unity のパスは自動解決されるので絶対パスを書かない）
+## コマンド（端末非依存。Unity / Strata のパスは自動解決されるので絶対パスを書かない）
 | 目的 | Windows (PowerShell / cmd) | macOS / Linux / Git Bash |
 |---|---|---|
-| Unity パス確認 | `tools\unity.cmd path` | `tools/unity.sh path` |
-| EditMode テスト | `tools\unity.cmd test EditMode` | `tools/unity.sh test EditMode` |
-| PlayMode テスト | `tools\unity.cmd test PlayMode` | `tools/unity.sh test PlayMode` |
+| EditMode / PlayMode テスト | `tools\unity.cmd test EditMode` / `PlayMode` / `All` | `tools/unity.sh test EditMode` |
 | .meta 生成/再インポート | `tools\unity.cmd refresh` | `tools/unity.sh refresh` |
 | 任意メソッド実行 | `tools\unity.cmd exec Ns.Class.Method [args]` | `tools/unity.sh exec ...` |
-| コンテキスト索引更新 | `tools\strata-index.cmd` | `pwsh tools/strata-index.ps1` |
-| コンテキスト索引検証 | `tools\strata-index.cmd -Verify` | `pwsh tools/strata-index.ps1 -Verify` |
-| ローカルモデル起動 / 状態 / 停止 | `tools\strata.cmd up` / `status` / `stop` | `pwsh tools/strata.ps1 up` など |
-| ローカルモデル疎通 | `tools\strata.cmd health` / `check` | `pwsh tools/strata.ps1 health` |
+| コンテキスト索引 更新 / 検証 | `tools\strata-index.cmd` / `-Verify` | `pwsh tools/strata-index.ps1 [-Verify]` |
+| タスク一覧 / 作成 / 着手 / 完了 | `tools\task.cmd list` / `new` / `claim <id>` / `done <id>` | `pwsh tools/task.ps1 ...` |
+| チーム状況 / 履歴 | `tools\team.cmd status` / `history` | `pwsh tools/team.ps1 ...` |
+| エージェント実行（履歴付き） | `tools\agent.cmd codex-local "指示"` | `pwsh tools/agent.ps1 ...` |
+| ローカルモデル 起動 / 状態 / 停止 | `tools\strata.cmd up` / `status` / `stop` | `pwsh tools/strata.ps1 ...` |
+| ローカルモデルへ委譲 | `tools\strata.cmd ask "質問" -File <path>` | `pwsh tools/strata.ps1 ask ...` |
 
 終了コード: `0` 成功 / `2` テスト失敗 / その他 Unity 起動・設定エラー。結果は `Logs/*-results.xml` と `Logs/UnityTest-*.log`。
 
-## 必須ルール
-1. **`.meta` を手で作成・編集・削除しない。** ファイル追加後は `refresh` で Unity に生成させ、`.meta` も一緒にコミット。移動/削除は `exec Game.Editor.BatchEntry.MoveAsset -from <a> -to <b>` / `DeleteAsset -path <p>`。
+## チーム作業ルール（衝突の回避と防御）
+1. **着手前に必ず claim する。** `tools\task.cmd claim <id> -Agent <自分の種別>`。claim は origin の `refs/claims/<id>` を原子的に作るので、同じタスクの二重着手や、`paths` が重なるタスクの同時着手は拒否される。拒否されたら作業しない。
+2. **触ってよいのは claim したタスクの `paths` だけ。** 範囲外の変更が必要になったら、作業を止めて新しいタスクを `tools\task.cmd new` で起票する。
+3. **1 タスク = 1 ブランチ（`task/<id>-...`）= 1 PR。** default ブランチへの直接 push は pre-push フックで拒否される。並列で動くエージェントは `claim -Worktree` で別ワークツリーを使う。
+4. **シーン（`*.unity`）・プレハブは同時編集しない。** タスクの `paths` に明記して claim で守る。バイナリ素材（psd / fbx / blend）は `git lfs lock <file>` してから編集し、終わったら `git lfs unlock`。
+5. **コミットはフックが帰属を付ける。** `Task:`（ブランチ名から）、`Agent:` と `Run-Record:`（`tools\agent.cmd` 経由の実行時）。トレーラーを消さない。`--no-verify` は使わない。
+6. 作業を終えたら `tools\task.cmd done <id>` で claim を解放し、ブランチを push して PR を作る（テンプレートの項目を埋める）。途中で手放す場合は `release`。
+7. 他人の claim を `-Force` で解放・上書きしない（人間の判断が必要）。
+
+## 実装ルール
+1. **`.meta` を手で作成・編集・削除しない。** ファイル追加後は `refresh` で Unity に生成させ、`.meta` も一緒にコミット（pre-commit と CI が検査）。移動/削除は `exec Game.Editor.BatchEntry.MoveAsset -from <a> -to <b>` / `DeleteAsset -path <p>`。
 2. **Unity がエディタで開いている間はバッチ実行できない**（`Temp/UnityLockfile`）。失敗したらユーザーに閉じてもらう。
-3. 新しい共通ユーティリティ・基底クラスを追加/変更したら `strata-index` を更新し、`-Verify` を通してからコミット。
+3. 共通ユーティリティ・基底クラスを追加/変更したら `strata-index` を更新し、`-Verify` を通してからコミット。
 4. 全コードをプロンプトやレスポンスに貼らない。タスクの `strataRefs`（`cs:Namespace.Type`）から必要ファイルだけ読む。
 5. コミット前チェック: EditMode テスト 0 終了 + `strata-index -Verify` 0 終了。
-6. `Library/`, `Temp/`, `Obj/`, `UserSettings/`, `Logs/*` はコミットしない（`.gitignore` 済み）。
+6. `Library/`, `Temp/`, `Obj/`, `UserSettings/`, `Logs/*`, `.codex-local/` はコミットしない。
 7. マシン固有の設定は `.unity-path.local` / 環境変数に置き、リポジトリに入れない。
 
+## Strata をエージェントの配下で使う（委譲）
+Codex / Claude Code が指揮役、Strata のローカルモデルが作業役です。クラウドのトークンを使わずに済む作業は委譲してください。
+- **単発の作業 → `tools\strata.cmd ask`**: ログからのエラー抽出・要約、diff の一次レビュー、定型コード・テストの下書き、命名案など。
+  例: `tools\strata.cmd ask "失敗原因を3行で" -File Logs\UnityTest-EditMode.log`
+- **まとまったサブタスク → `tools\agent.cmd codex-local "指示"`**: ローカルモデルの Codex に、claim 済みタスクの一部を任せる（必ず別ワークツリーで）。
+- 委譲結果は必ず自分で確認してから使う（ローカルモデルは小さく、誤りやすい）。設計判断・最終レビューは指揮役が行う。
+- `tools\agent.cmd` 経由の実行中に `ask` した内容は、同じ `History/runs` の記録に自動で追記される。
+
 ## ローカルモデル（Strata）での 24 時間稼働
-- 長時間ループ（実装サイクル、ログ要約、日次レポート）は `.strata/launch.json` のローカルモデルで回し、API 課金を発生させない。Codex は `codex --profile strata` で接続（`.codex/config.toml`）。
-- ローカルモデルのコンテキストは `.strata/launch.json` の `context`（既定 64K）が上限。プロンプトは **L1 → L2 → L3 の順** に並べ、毎サイクル変わる内容（diff・ログ）は末尾に置く。先頭が毎回同一だとサーバーのプロンプトキャッシュが再利用され、処理時間が大きく減る。
+- 長時間ループは `tools\agent.cmd codex-local` で回し、API 課金を発生させない（Codex の設定は `tools/templates/codex-local.config.toml`）。
+- コンテキストは `.strata/launch.json` の `context`（既定 64K）が上限。プロンプトは **L1 → L2 → L3 の順** に並べ、毎サイクル変わる内容（diff・ログ）は末尾に置く。先頭が毎回同一だとサーバーのプロンプトキャッシュが効く。
 - ログは全文を渡さない。`error CS\d{4}` や失敗テスト名だけ抽出して渡す。
-- 難しい設計判断・大規模リファクタは通常のクラウドモデル（プロファイル指定なしの Codex / Claude Code）に回す。
-- Unity のバッチ実行とローカルモデルはメモリを取り合う。テスト失敗が OOM 由来に見えたら `tools\strata.cmd status` でメモリ状況を確認。
+- Unity のバッチ実行とローカルモデルはメモリを取り合う。OOM に見える失敗は `tools\strata.cmd status` で確認。
 
 ## サンドボックス注意（Codex）
 Unity のバッチ実行はプロジェクト外（ライセンス、`%LOCALAPPDATA%\Unity`、パッケージ取得のネットワーク）にもアクセスします。
 サンドボックスで失敗した場合は、`tools/unity.*` の実行に昇格（承認付き実行）を求めてください。
+Windows の Codex サンドボックスは深いパスでカレントディレクトリを見失うことがあるため、リポジトリは `C:\dev\<name>` のような浅い場所に置く。

@@ -32,6 +32,22 @@ function Get-TaskIdFromBranch([string]$branch) {
     return $null
 }
 
+function Invoke-WithPromptFile([string]$Exe, [string[]]$ExeArgs, [string]$PromptFile) {
+    # Runs `<exe> <args> < <file>` through cmd.exe so the prompt reaches the CLI byte-for-byte as UTF-8.
+    # (PowerShell 5.1 re-encodes piped text to native programs, and batch shims such as codex.cmd cut
+    #  command-line arguments at newlines, so neither a pipe nor an argument is safe for multi-line prompts.)
+    $quoted = @($ExeArgs | ForEach-Object { if ($_ -match '[\s"&|<>^]') { '"' + ($_ -replace '"', '""') + '"' } else { $_ } })
+    $line = '"' + $Exe + '" ' + ($quoted -join ' ') + ' < "' + $PromptFile + '"'
+    # CLIs print progress on stderr; under Windows PowerShell 5.1 that must not become a terminating error
+    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { & cmd.exe /d /s /c "`"$line`"" 2>&1 | ConvertTo-OutputLine } finally { $ErrorActionPreference = $prev }
+}
+
+function ConvertTo-OutputLine {
+    # stderr lines arrive as ErrorRecords; print their text, not "System.Management.Automation.RemoteException"
+    process { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" } }
+}
+
 function Write-TextFile([string]$path, [string]$text) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
     [IO.File]::WriteAllText($path, $text.Replace("`r`n", "`n"), $script:Utf8)

@@ -41,3 +41,9 @@ jobs:
         run: |
           missing=$(git log --no-merges --format='%h %s%n%(trailers:key=Task,valueonly)' origin/${{ github.base_ref }}..HEAD | awk 'NF==0{next} /^[0-9a-f]{7,} /{h=$0; getline t; if (t !~ /^T-/) print h}')
           if [ -n "$missing" ]; then echo "Commits without 'Task:' trailer:"; echo "$missing"; exit 1; fi
+
+      - name: PowerShell scripts are ASCII (Windows PowerShell 5.1 safe)
+        run: |
+          if grep -rnP '[^\x00-\x7F]' --include='*.ps1' --include='*.psm1' tools; then
+            echo "Non-ASCII characters in PowerShell scripts (Windows PowerShell 5.1 misreads BOM-less UTF-8)"; exit 1
+          fi

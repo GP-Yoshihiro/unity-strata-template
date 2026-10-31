@@ -9,15 +9,17 @@
 ## 🔍 入力データソース
 1. `Logs/UnityTest-EditMode.log` / `Logs/UnityTest-PlayMode.log`（コンパイルエラー・警告）と `Logs/*-results.xml`
 2. Strata サーバーの計測値: `http://127.0.0.1:8080/metrics`（プロンプト／生成トークン数、速度。`tools\strata.cmd status` でアドレス確認）。取得値は `.strata/stats.json` に追記保存してよい（非コミット）。サーバー停止中は「計測なし」と記載
-3. `Tasks/backlog.json` / `Tasks/completed.json`
-4. `git log --since="24 hours ago" --stat`
+3. `tools\task.cmd list -All`（`Tasks/items/*.json`）と `tools\team.cmd status`（進行中の claim）
+4. `tools\team.cmd history -Days 1`（誰がどのエージェントにどんな指示を出したか。詳細は `History/runs/`）
+5. `git log --since="24 hours ago" --stat`（`Task:` / `Agent:` トレーラーで集計できる）
 
 ---
 
 ## 📝 実行ステップ
 
 ### 1. 本日の日計レポート出力 (`Reports/daily_report_YYYYMMDD.md`)
-- **達成タスク数**: テストを通過したC#機能・バグ修正（`completed.json` の当日分）
+- **達成タスク数**: テストを通過したC#機能・バグ修正（当日 `done` になったタスク）。担当者・エージェント別の内訳
+- **衝突・停滞**: 24 時間以上動きのない claim、claim の拒否が多かった `paths`（タスク分割の候補）、`exit_code` が 0 でない実行
 - **Strata効率指標**:
   - 総処理トークン数 vs 実際のリクエストトークン数（キャッシュ削減率）
   - 平均 TTFT (Time-To-First-Token) レスポンス速度
@@ -30,12 +32,13 @@
    - 変更頻度の低い共有クラス（例: Network, UI Framework）が頻繁にL3（動的領域）で再読み込みされていた場合、L1/L2の永続キャッシュ層へ昇格させる（`include` パターンの追加）。
 2. **`Prompts/unity_csharp_coder.md` の補正**:
    - 不要に長文のコードを出力してコンテキストを圧迫している場合、Diff形式（`git diff` 互換）のみを出力させるプロンプト制約を強化する。
-3. **タスクの自動分割とキャッシュ参照付与 (`Tasks/backlog.json`)**:
-   - 巨大タスクを分割し、各タスクの `strataRefs` に「参照すべきStrataキャッシュID（`cs:Namespace.Type`）」を明記して検索コストを削減する。
+3. **タスクの自動分割とキャッシュ参照付与 (`Tasks/items/*.json`)**:
+   - 巨大タスクを `tools\task.cmd new` で分割し、各タスクの `strataRefs` に「参照すべきStrataキャッシュID（`cs:Namespace.Type`）」、`paths` に触る範囲を明記して、検索コストと claim の衝突を減らす。
+   - 他人が claim 中のタスクは変更しない。
 
 ---
 
 ## ⚠️ 制約・注意事項
 - `.meta` ファイルを直接テキスト編集・削除しないこと。
 - 層設定（`.strata/cache_config.json`）更新後、`tools\strata-index.cmd` → `tools\strata-index.cmd -Verify` を実行してコンテキスト索引の整合性を検証すること。
-- レポートと設定変更は別コミットにすること。
+- レポートと設定変更は別コミットにすること。改善は自分用のタスクを起票・claim し、PR で提出すること（default ブランチへ直接 push しない）。
