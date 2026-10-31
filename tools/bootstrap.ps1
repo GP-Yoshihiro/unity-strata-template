@@ -38,6 +38,8 @@ $Tools = $PSScriptRoot
 $OnWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
 $Utf8 = New-Object Text.UTF8Encoding $false
 try { [Console]::OutputEncoding = $Utf8 } catch { }
+# Windows PowerShell 5.1 may default to TLS 1.0/1.1, which GitHub and Unity's API refuse
+if ($PSVersionTable.PSEdition -eq 'Desktop') { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 }
 $TemplateSlug = 'GP-Yoshihiro/unity-strata-template'
 $TemplateOwner = 'GP-Yoshihiro'
 $StateFile = Join-Path $RepoRoot '.bootstrap.local.json'
@@ -189,14 +191,24 @@ function Install-WithWinget([string]$Id, [string]$Label, [bool]$Default = $true)
 }
 
 function Invoke-RemoteInstaller([string]$Label, [string]$PsUrl, [string]$ShUrl) {
-    # Official installer scripts (Strata, uv, Claude Code). Always asks first.
-    if (-not (Ask-YesNo (T 'ask_install_script' $Label $(if ($OnWindows) { $PsUrl } else { $ShUrl })) $true)) { return $false }
-    if ($OnWindows) {
-        $shell = (Get-Process -Id $PID).Path
-        $null = Invoke-Tool { & $shell -NoProfile -ExecutionPolicy Bypass -Command "irm $PsUrl | iex" }
-    } else {
-        $null = Invoke-Tool { & sh -c "curl -fsSL $ShUrl | sh" }
-    }
+    # Official installer scripts (Strata, uv, Claude Code). Never piped straight into a shell: the script is
+    # saved to a file first and its path and SHA256 are shown, so it can be inspected (or scanned) before it runs.
+    $url = if ($OnWindows) { $PsUrl } else { $ShUrl }
+    if (-not (Ask-YesNo (T 'ask_install_script' $Label $url) $true)) { return $false }
+    $ext = if ($OnWindows) { '.ps1' } else { '.sh' }
+    $file = Join-Path ([IO.Path]::GetTempPath()) ('installer-' + [Guid]::NewGuid().ToString('N') + $ext)
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $file -TimeoutSec 120
+        Say 'installer_downloaded' $file (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+        if (-not (Ask-YesNo (T 'ask_run_installer') $true)) { return $false }
+        if ($OnWindows) {
+            $shell = (Get-Process -Id $PID).Path
+            $null = Invoke-Tool { & $shell -NoProfile -ExecutionPolicy Bypass -File $file }
+        } else {
+            $null = Invoke-Tool { & sh $file }
+        }
+    } catch { Warn 'installer_failed' $url $_.Exception.Message; return $false }
+    finally { Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue }
     Update-SessionPath
     return $true
 }

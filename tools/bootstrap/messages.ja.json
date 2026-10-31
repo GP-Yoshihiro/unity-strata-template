@@ -22,7 +22,6 @@
   "commit_failed": "  コミットできませんでした: {0}",
   "push_failed": "  push に失敗しました（ネットワーク・権限を確認してください）。",
   "file_not_found": "ファイルが見つかりません: {0}",
-
   "step_prereq": "前提ツールの確認",
   "step_prereq_desc": "Git / Git LFS / GitHub CLI と git のユーザー名を確認し、足りなければ winget で入れます。",
   "ask_git_name": "git のユーザー名（コミットと claim に使います）",
@@ -31,7 +30,6 @@
   "gh_login": "GitHub にログインします（ブラウザが開きます）。",
   "gh_login_failed": "GitHub CLI にログインできていません（gh auth login）。",
   "gh_ok": "  ✔ GitHub: {0}",
-
   "step_repo": "新規リポジトリの作成",
   "step_repo_desc": "このひな形から GitHub に新しいリポジトリを作ります（名前と公開設定を指定）。作者向けの設定も自分用に書き換えます。",
   "repo_already": "  このフォルダはすでに自分のリポジトリ（{0}）に接続されています。作成はスキップします。",
@@ -53,7 +51,6 @@
   "history_failed": "  履歴リポジトリを作れませんでした。履歴はこの PC のみに保存します（team.config.json の historyRepo で後から設定できます）。",
   "repo_create_failed": "GitHub にリポジトリ {0} を作成できませんでした。",
   "repo_created": "  ✔ {0} を作成して push しました（{1}）",
-
   "step_unity": "Unity のバージョン選択とインストール",
   "step_unity_desc": "使う Unity の版を選び、Unity Hub 経由でインストールします。版を変える場合はプロジェクトも移行します。",
   "hub_missing": "  Unity Hub が見つかりません。https://unity.com/download から入れてください。",
@@ -76,7 +73,6 @@
   "unity_upgrading": "プロジェクトを Unity {0} → {1} に移行します（数分かかります）…",
   "unity_upgrade_failed": "Unity {0} への移行に失敗しました（Logs/UnityUpgrade.log を確認）。",
   "unity_ready": "  ✔ Unity {0} を使います",
-
   "step_strata": "Strata（ローカルモデル）の立ち上げとモデル選択",
   "step_strata_desc": "PC 上で動くローカル AI サーバー Strata を入れ、モデルを選びます。モデルは賢い順に、GPU 負荷とこの PC で動くかの目安つきで表示します。",
   "ask_use_strata": "ローカルモデル（Strata）を使いますか（使わない場合はクラウドの AI だけで動かします）",
@@ -103,7 +99,6 @@
   "strata_running": "  ✔ Strata 起動中: {0}",
   "strata_not_ready": "  まだ応答がありません（ダウンロード中かもしれません）。tools\\strata.cmd status / health で確認してください。",
   "strata_up_later": "  あとで tools\\strata.cmd up で起動できます。",
-
   "step_connect": "メイン AI と Strata の接続",
   "step_connect_desc": "指揮役のメイン AI（Claude Code / Codex）を用意し、作業役の Strata とつなぎます。24 時間ループで使うエージェントも決めます。",
   "ask_main_ai": "メイン AI",
@@ -127,7 +122,6 @@
   "agent_claude-local": "Claude Code + Strata（ローカル・実験的）",
   "agent_strata": "Strata に質問するだけ（ファイルは変更しない）",
   "agents_set": "  ✔ メイン AI: {0} ／ ループ: {1}（team.config.json）",
-
   "step_unitydev": "Unity の開発環境整備",
   "step_unitydev_desc": "IDE、よく使うパッケージ、初回インポート、最初の EditMode テストまでを行います。",
   "ask_ide": "使う IDE",
@@ -144,7 +138,6 @@
   "unity_first_import": "初回インポートとテストを実行します（初回は数分かかります）…",
   "unity_test_ok": "  ✔ EditMode テスト合格",
   "unity_test_failed": "  EditMode テストが失敗しました（終了コード {0}）。ライセンス未有効化・コンパイルエラーの可能性があります（Logs/UnityTest-EditMode.log）。",
-
   "step_skills": "スキル・プラグインの設定（spec-kit を含む）",
   "step_skills_desc": "エージェント用スキル、Claude Code プラグイン、仕様駆動開発の spec-kit を設定します。",
   "skills_synced": "  ✔ エージェントスキル: {0}",
@@ -157,7 +150,6 @@
   "speckit_init_failed": "  spec-kit の初期化（{0}）に失敗しました。",
   "speckit_constitution": "  ✔ このプロジェクト用の Constitution を .specify/memory/constitution.md に書きました",
   "speckit_flow": "  使い方: AI で /speckit.specify（仕様）→ /speckit.plan（計画）→ /speckit.tasks（タスク）→ tools\\task.cmd import specs\\<機能>\\tasks.md でタスク化 → claim して実装（または tools\\loop.cmd）。",
-
   "step_verify": "使用の確認",
   "step_verify_desc": "指示を「ファイルのパス」か「プロンプト入力」で渡して、エージェント → Unity テストまで一通り動かします。",
   "ask_verify_mode": "確認のしかた",
@@ -167,7 +159,6 @@
   "ask_prompt_file": "指示が書かれたファイルのパス",
   "try_failed": "  確認が途中で止まりました（終了コード {0}）。tools\\try.cmd で何度でも試せます。",
   "try_need_origin": "GitHub のリポジトリ（origin）がないため確認できません。先に「新規リポジトリの作成」を行ってください。",
-
   "step_finish": "仕上げ",
   "step_finish_desc": "main ブランチの保護を設定し、結果をまとめます。",
   "ask_protect": "main ブランチを保護しますか（PR 必須・CI repo-checks 必須・force push 禁止）",
@@ -179,7 +170,6 @@
   "summary_strata": "  Strata     : {0}",
   "summary_agents": "  メインAI   : {0} ／ 24時間ループ: {1}",
   "next_steps": "次にやること:\n  tools\\task.cmd new \"タスク名\" -Paths Assets/Scripts/Runtime/<機能>   … タスクを作る（spec-kit なら tools\\task.cmd import）\n  tools\\try.cmd -File <指示ファイル> / tools\\try.cmd \"指示\"          … いつでも動作確認\n  tools\\loop.cmd -Once                                                … 無人ループを 1 件だけ試す（専用 clone で）\n  tools\\team.cmd status                                               … チームの状況",
-
   "try_ask_mode": "指示の渡し方",
   "try_type_prompt": "指示を入力してください（複数行可。空行または . だけの行で終了）",
   "try_file_loaded": "  ✔ {0} を読み込みました（{1} 文字）",
@@ -202,5 +192,8 @@
   "try_then_discard": "すべて破棄する（ブランチ・claim・タスク）",
   "try_discarded": "  ✔ {0} を破棄しました",
   "try_kept": "  ✔ ブランチ {0} に残しました（claim は保持。やめるときは tools\\task.cmd release {1}）",
-  "try_pr": "  ✔ {0} を push して draft PR を作りました"
+  "try_pr": "  ✔ {0} を push して draft PR を作りました",
+  "installer_downloaded": "  インストーラーを保存しました: {0}\n  SHA256: {1}\n  （実行前に内容を開いて確認したり、ウイルス対策ソフトで検査したりできます）",
+  "ask_run_installer": "このインストーラーを実行しますか",
+  "installer_failed": "  インストーラーを取得・実行できませんでした（{0}）: {1}"
 }

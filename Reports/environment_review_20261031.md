@@ -126,3 +126,31 @@
   - Strata のモデル ID の大文字・小文字と `--context` → `--plan` で順に試す
   - Claude Code プラグイン名（unity / unity-perf / github） → 失敗したら `/plugin` での手動導入を案内。一覧は `catalog.json` で変更可
   - spec-kit の `--integration` / `--ai` → ヘルプから自動判定
+
+---
+
+## 5. 配布前の安全性チェック（ウイルス・不正コード）
+
+人に渡す前提で、リポジトリ全体（このブランチ）を検査しました。**ウイルス・不正なコードは見つかりませんでした。**
+
+| 観点 | 結果 |
+|---|---|
+| 実行ファイル・バイナリの同梱（exe / dll / bat / vbs / js / zip など） | なし（全ファイルがテキスト・JSON・Unity YAML） |
+| 難読化・隠れた実行（`-EncodedCommand`、Base64、`Invoke-Expression`、`DownloadString`、certutil / mshta / rundll32 / bitsadmin） | なし |
+| 常駐化・設定改ざん（タスクスケジューラ、Run レジストリ、Defender の除外設定） | なし |
+| 見えない文字による偽装（双方向制御文字・ゼロ幅文字 = Trojan Source） | なし |
+| 秘密情報（GitHub トークン、API キー、秘密鍵） | なし |
+| 通信先 | GitHub、Unity（unity.com / services.api.unity.com）、astral.sh（uv）、claude.ai（Claude Code）、127.0.0.1（ローカルの Strata）のみ。外部へのデータ送信はなし |
+| Unity プロジェクトを開いたときの自動実行（`InitializeOnLoad` など）、外部プロセス・通信・ファイル削除 API | なし（`BatchEntry` はバッチ実行で明示的に呼んだときだけ動く） |
+| Unity パッケージの取得元 | Unity 公式レジストリのみ |
+| git フック（コミット・push 時に自動で動く） | リポジトリ内の `tools/check-meta.sh`・`strata-index.ps1` と Git LFS だけを呼ぶ |
+| 削除・強制操作 | リポジトリ内に限定（無人ループと `try` の破棄、空の履歴フォルダの作り直し）。破棄の前には未コミットの変更をパッチに保存する、またはユーザーが「破棄」を選ぶ |
+
+**対応したこと**
+- ブートストラップの外部インストーラー（Strata・uv・Claude Code）は、`irm URL | iex` でダウンロードしたスクリプトを保存せずそのまま実行していました。これをやめ、**いったんファイルに保存し、場所と SHA256 を表示して、確認してから実行**するようにしました。受け取った人が実行前に中身を確認したりウイルス対策ソフトで検査したりでき、`irm | iex` という形をウイルス対策ソフトに誤検知されることも避けられます。
+- Windows PowerShell 5.1 で GitHub や Unity の API に接続できるよう、TLS 1.2 を有効にしました。
+
+**受け取る人に伝えておくこと**
+- `tools\*.cmd` と `bootstrap.cmd` は `-ExecutionPolicy Bypass` で PowerShell を起動します（このリポジトリのスクリプトを、実行ポリシーの設定に関係なく動かすため。一般的な手法です）。
+- ブートストラップは、確認を求めたうえで winget・npm・uv と各公式インストーラーからソフトを入れます。入れるものは画面に表示されます。
+- 既存のローカル Codex 設定（`tools/templates/codex-local.config.toml`）は、無人運用のため `approval_policy = "never"` で、サンドボックス内のネットワークも許可しています。信頼できないタスク本文を無人ループに渡さないでください。
