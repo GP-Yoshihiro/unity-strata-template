@@ -117,8 +117,11 @@ switch ($Command) {
         if ($Paths) { $t.paths = @($Paths) }
         $t | Add-Member -NotePropertyName _path -NotePropertyValue $taskFile -Force
         Save-Task $t
-        & git -C $target add -- "Tasks/items/$Arg.json"
-        & git -C $target commit -q -m "task($Arg): start -- $($task.title)" -m "Task: $Arg"
+        # git prints CRLF warnings on stderr; under Windows PowerShell 5.1 that must not abort the script
+        $ErrorActionPreference = 'Continue'
+        & git -C $target add -- "Tasks/items/$Arg.json" 2>&1 | Out-Null
+        & git -C $target commit -q -m "task($Arg): start -- $($task.title)" -m "Task: $Arg" 2>&1 | Write-Host
+        $ErrorActionPreference = 'Stop'
         Write-Host "Claimed $Arg for $($user.Name) ($Agent). Branch: $branch"
         if ($Worktree) { Write-Host "Worktree: $target" }
     }

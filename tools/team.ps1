@@ -50,8 +50,8 @@ switch ($Command) {
         & (Join-Path $PSScriptRoot 'task.ps1') list
 
         Write-Host "== LFS file locks (binary assets)"
-        $locks = & git -C $script:RepoRoot lfs locks 2>$null
-        if ($LASTEXITCODE -eq 0 -and $locks) { $locks | ForEach-Object { "  $_" } | Write-Host } else { Write-Host '  (none or LFS locking unavailable)' }
+        $locks = Invoke-Git lfs locks -AllowFail
+        if ($LASTEXITCODE -eq 0 -and $locks) { $locks | ForEach-Object { "  $_" } | Write-Host } else { Write-Host '  (none, or the remote has no LFS locking API)' }
 
         Write-Host "`n== Recent agent runs"
         Get-Runs | Select-Object -First 10 | Format-Table Started, User, Agent, Task, Exit, Prompt -AutoSize | Out-String -Width 220 | Write-Host
