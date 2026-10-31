@@ -48,7 +48,8 @@ switch ($Agent) {
     'codex' {
         $exe = Find-Exe @('codex.cmd', 'codex') (Join-Path "$env:APPDATA" 'npm\codex.cmd')
         if (-not $exe) { throw 'Codex CLI not found. Install: npm.cmd install -g @openai/codex' }
-        $cmd = { Invoke-WithPromptFile $exe @('exec', '-') $promptFile }; $model = 'codex (cloud default)'
+        # --sandbox: without it an untrusted checkout falls back to read-only and the agent cannot edit
+        $cmd = { Invoke-WithPromptFile $exe @('exec', '--sandbox', 'workspace-write', '-') $promptFile }; $model = 'codex (cloud default)'
     }
     'codex-local' {
         $cmd = { & (Join-Path $PSScriptRoot 'codex-local.ps1') -PromptFile $promptFile exec - }
@@ -57,7 +58,9 @@ switch ($Agent) {
     'claude' {
         $exe = Find-Exe @('claude.cmd', 'claude.exe', 'claude') $null
         if (-not $exe) { throw 'Claude Code CLI (claude) not found on PATH.' }
-        $cmd = { Invoke-WithPromptFile $exe @('-p') $promptFile }; $model = 'claude (default)'
+        # Headless (-p) runs cannot answer permission prompts: allow file edits; shell commands stay limited to
+        # .claude/settings.json allow rules, and its deny rules (.history, .meta, force push) still apply.
+        $cmd = { Invoke-WithPromptFile $exe @('-p', '--permission-mode', 'acceptEdits') $promptFile }; $model = 'claude (default)'
     }
     'strata' {
         $cmd = { & (Join-Path $PSScriptRoot 'strata.ps1') ask $fullPrompt }

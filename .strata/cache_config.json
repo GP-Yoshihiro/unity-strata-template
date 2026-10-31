@@ -32,7 +32,7 @@
       "persistence": "per-cycle",
       "refresh": "every-cycle",
       "include": [
-        "Tasks/backlog.json",
+        "Tasks/items/**",
         "Logs/**",
         "git:diff",
         "git:log -n 20"

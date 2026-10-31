@@ -42,6 +42,18 @@ jobs:
           missing=$(git log --no-merges --format='%h %s%n%(trailers:key=Task,valueonly)' origin/${{ github.base_ref }}..HEAD | awk 'NF==0{next} /^[0-9a-f]{7,} /{h=$0; getline t; if (t !~ /^T-/) print h}')
           if [ -n "$missing" ]; then echo "Commits without 'Task:' trailer:"; echo "$missing"; exit 1; fi
 
+      - name: Shell scripts are executable and parse; cmd wrappers are cmd syntax
+        run: |
+          bad=0
+          for f in $(git ls-files 'tools/*.sh' '.githooks/*'); do
+            mode=$(git ls-files -s -- "$f" | cut -d' ' -f1)
+            [ "$mode" = 100755 ] || { echo "::error file=$f::not executable in git (git update-index --chmod=+x $f)"; bad=1; }
+            bash -n "$f" || { echo "::error file=$f::bash syntax error"; bad=1; }
+          done
+          # cmd.exe has no /dev/null: ">/dev/null" creates a file named \dev\null on the current drive
+          if grep -n '/dev/null' tools/*.cmd; then echo "::error::use >nul in .cmd files"; bad=1; fi
+          exit $bad
+
       - name: PowerShell scripts are ASCII (Windows PowerShell 5.1 safe)
         run: |
           if grep -rnP '[^\x00-\x7F]' --include='*.ps1' --include='*.psm1' tools; then

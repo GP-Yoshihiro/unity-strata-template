@@ -36,13 +36,15 @@ try {
     if (-not (git config user.name)) { throw 'git user.name is not set -- task claims and history need it: git config --global user.name "<name>" (and user.email)' }
 
     # A "Download ZIP" copy has no .git: turn it into a repository and work on a new branch
-    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $top = git rev-parse --show-toplevel 2>$null
-    $ErrorActionPreference = $prevEap
-    $isOwnRepo = $top -and ([IO.Path]::GetFullPath($top.Replace('/', '\')).TrimEnd('\') -ieq [IO.Path]::GetFullPath($RepoRoot).TrimEnd('\'))
-    if (-not $isOwnRepo) {
+    # (.git is a folder in clones and a file in worktrees; a ZIP unpacked inside another repo has neither)
+    . (Join-Path $PSScriptRoot 'lib/team.ps1')
+    $zipImport = -not (Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))
+    if ($zipImport) {
         Write-Host 'No git repository here (ZIP download): initialising one'
-        git init -q -b main
+        git init -q
+        git symbolic-ref HEAD refs/heads/main   # same as `git init -b main`, but works on git < 2.28
+        # LFS filters must be active BEFORE the first `git add`, or binaries are committed as plain blobs
+        git lfs install --local --skip-repo | Out-Null   # filters only: .githooks already chain the LFS hooks
         git add -A
         git commit -q -m 'Import unity-strata-template (ZIP download)'
         if (-not $Branch) { $Branch = 'local/' + ((git config user.name) -replace '[^A-Za-z0-9_-]', '').ToLower() }
@@ -54,7 +56,7 @@ try {
         Write-Host "Working branch: $Branch"
     }
 
-    git lfs install --local | Out-Null
+    git lfs install --local --skip-repo | Out-Null   # filters only: .githooks already chain the LFS hooks
     if (git remote) { git lfs pull }
     # Shared team hooks (meta check, attribution trailers, no direct push to main); they chain to LFS.
     git config --local core.hooksPath .githooks
@@ -62,22 +64,27 @@ try {
     Write-Host 'Team hooks enabled (.githooks)'
 
     Write-Host '== private run history'
-    . (Join-Path $PSScriptRoot 'lib/team.ps1')
     $history = Sync-History
     $where = if (Test-HistoryRepo $history) { "synced with $((Get-TeamConfig).historyRepo)" } else { 'local only' }
     Write-Host "History folder: $history (hidden, ignored by git, $where)"
 
     Write-Host '== Unity'
     & (Join-Path $PSScriptRoot 'find-unity.ps1') -List
-    $unity = & (Join-Path $PSScriptRoot 'find-unity.ps1')
-    Write-Host "Using: $unity"
-
-    $editorDir = Split-Path -Parent $unity
-    $yamlMerge = @(
-        (Join-Path $editorDir 'Data/Tools/UnityYAMLMerge.exe'),
-        (Join-Path $editorDir 'Data/Tools/UnityYAMLMerge'),
-        (Join-Path $editorDir '../Resources/Tools/UnityYAMLMerge')
-    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    $unity = $null
+    try { $unity = & (Join-Path $PSScriptRoot 'find-unity.ps1') } catch {
+        # Keep going: hooks, history, skills and the index do not need Unity. Install it, then re-run setup.
+        Write-Warning "$($_.Exception.Message)`nInstall it with: tools\unity.cmd install   (then re-run tools\setup.cmd)"
+    }
+    $yamlMerge = $null
+    if ($unity) {
+        Write-Host "Using: $unity"
+        $editorDir = Split-Path -Parent $unity
+        $yamlMerge = @(
+            (Join-Path $editorDir 'Data/Tools/UnityYAMLMerge.exe'),
+            (Join-Path $editorDir 'Data/Tools/UnityYAMLMerge'),
+            (Join-Path $editorDir '../Resources/Tools/UnityYAMLMerge')
+        ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
     if ($yamlMerge) {
         $yamlMerge = (Resolve-Path -LiteralPath $yamlMerge).Path.Replace('\', '/')
         git config --local merge.unityyamlmerge.name 'Unity SmartMerge'
@@ -104,6 +111,21 @@ try {
         Write-Host 'Next: tools\strata.cmd plan, then tools\strata.cmd up'
     } catch {
         Write-Warning "Strata Terminal not installed (optional, for local-model runs). Install: $(& (Join-Path $PSScriptRoot 'strata.ps1') install)"
+    }
+
+    Write-Host '== new-project check'
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $origin = git remote get-url origin 2>$null
+    $ErrorActionPreference = $prevEap
+    $histRepo = (Get-TeamConfig).historyRepo
+    $ownerOf = { param($u) $m = [regex]::Match("$u", 'github\.com[:/]([^/]+)/'); if ($m.Success) { $m.Groups[1].Value } else { '' } }
+    if ($histRepo -and $origin -and ((& $ownerOf $histRepo) -ne (& $ownerOf $origin))) {
+        Write-Warning "team.config.json historyRepo ($histRepo) belongs to a different owner than origin ($origin). For a new project: create your own PRIVATE history repo, then edit team.config.json and .github/CODEOWNERS."
+    }
+    if ($zipImport -and $Remote) {
+        Write-Host 'First push of a new repository (the pre-push hook blocks main otherwise):'
+        Write-Host '  $env:ALLOW_MAIN_PUSH = 1; git push -u origin main; Remove-Item Env:ALLOW_MAIN_PUSH'
+        Write-Host "  git push -u origin $Branch"
     }
 
     Write-Host "`nSetup complete. Try: tools\unity.cmd test EditMode"

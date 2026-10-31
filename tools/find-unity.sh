@@ -2,8 +2,11 @@
 # Resolve the Unity Editor executable for this project (macOS / Linux / Git Bash on Windows).
 # Same resolution order as tools/find-unity.ps1:
 #   $1 arg > $UNITY_EDITOR_PATH > .unity-path.local > installed editor matching ProjectVersion.txt
-#   > same major.minor / newest (warning, unless STRICT=1) > Unity on PATH
-# Usage: tools/find-unity.sh [path]      tools/find-unity.sh --list
+#   > newer patch of the same major.minor (warning, unless STRICT=1) > Unity on PATH
+# Older editors and other major/minor versions are never picked silently (that would up/downgrade the
+# project for the whole team): use tools/unity.sh install / upgrade <version>.
+# UNITY_VERSION=<v> looks for that version instead of ProjectVersion.txt (used by unity.sh upgrade).
+# Usage: tools/find-unity.sh [path]      tools/find-unity.sh --list      tools/find-unity.sh --hub
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -91,9 +94,25 @@ version_key() {
 }
 
 project_version() {
+  [ -n "${UNITY_VERSION:-}" ] && { echo "$UNITY_VERSION"; return; }
   local f="$REPO_ROOT/ProjectSettings/ProjectVersion.txt"
   [ -f "$f" ] && sed -n 's/^m_EditorVersion:[[:space:]]*\([^[:space:]]*\).*/\1/p' "$f" | tr -d '\r' | head -n1
 }
+
+find_hub() {
+  [ -n "${UNITY_HUB_PATH:-}" ] && [ -f "$UNITY_HUB_PATH" ] && { echo "$UNITY_HUB_PATH"; return 0; }
+  local c
+  case "$OS" in
+    win) for c in "$(to_unix "${PROGRAMFILES:-C:/Program Files}/Unity Hub/Unity Hub.exe")" "$(to_unix "${LOCALAPPDATA:-}/Programs/Unity Hub/Unity Hub.exe")"; do [ -f "$c" ] && { echo "$c"; return 0; }; done ;;
+    mac) for c in "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub" "$HOME/Applications/Unity Hub.app/Contents/MacOS/Unity Hub"; do [ -f "$c" ] && { echo "$c"; return 0; }; done ;;
+    *) for c in /usr/bin/unityhub /opt/unityhub/unityhub "$HOME/Applications/Unity Hub.AppImage" "$HOME/Applications/UnityHub.AppImage"; do [ -f "$c" ] && { echo "$c"; return 0; }; done ;;
+  esac
+  command -v unityhub 2>/dev/null && return 0
+  echo "error: Unity Hub not found. Install it from https://unity.com/download (or set UNITY_HUB_PATH)." >&2
+  return 1
+}
+
+if [ "${1:-}" = "--hub" ]; then find_hub; exit $?; fi
 
 WANT="$(project_version || true)"
 
@@ -110,6 +129,7 @@ LOCAL_VAL=""
 for src in "arg:${1:-}" "UNITY_EDITOR_PATH:${UNITY_EDITOR_PATH:-}" ".unity-path.local:$LOCAL_VAL"; do
   name="${src%%:*}"; val="${src#*:}"
   [ -z "$val" ] && continue
+  [ -n "${UNITY_VERSION:-}" ] && [ "$name" != arg ] && continue   # an explicit version beats the usual editor
   if resolve_candidate "$val"; then exit 0; fi
   echo "warning: $name is set but no Unity executable was found at '$val'" >&2
 done
@@ -121,16 +141,26 @@ if [ -n "$WANT" ]; then
   [ -n "$hit" ] && { echo "$hit"; exit 0; }
 fi
 if [ "${STRICT:-0}" != "1" ] && [ -n "$EDITORS" ]; then
-  mm="$(echo "$WANT" | cut -d. -f1-2)"
-  pick="$(echo "$EDITORS" | awk -v mm="$mm." 'mm!="." && index($2, mm)==1 { print; exit }')"
-  [ -z "$pick" ] && pick="$(echo "$EDITORS" | head -n1)"
-  echo "warning: Unity $WANT not installed; falling back to $(echo "$pick" | awk '{print $2}'). Install $WANT via Unity Hub to avoid an upgrade." >&2
-  echo "$pick" | awk '{ $1=""; $2=""; sub(/^  /, ""); print }'
-  exit 0
+  if [ -n "$WANT" ]; then
+    # only a newer patch of the same major.minor; the list is newest first, so the last hit is the closest
+    mm="$(echo "$WANT" | cut -d. -f1-2)"
+    pick="$(echo "$EDITORS" | awk -v mm="$mm." -v wk="$(version_key "$WANT")" 'index($2, mm)==1 && $1 > wk { p=$0 } END { if (p) print p }')"
+  else
+    pick="$(echo "$EDITORS" | head -n1)"
+  fi
+  if [ -n "$pick" ]; then
+    echo "warning: Unity $WANT not installed; using $(echo "$pick" | awk '{print $2}') (same major.minor). Install $WANT (tools/unity.sh install) to stay on the team's version." >&2
+    echo "$pick" | awk '{ $1=""; $2=""; sub(/^  /, ""); print }'
+    exit 0
+  fi
+  echo "error: Unity $WANT is not installed (found: $(echo "$EDITORS" | awk '{print $2}' | tr '\n' ' ')). Install it: tools/unity.sh install  -- or move the project on purpose: tools/unity.sh upgrade <version>" >&2
+  exit 1
 fi
 
-# 6: PATH
-for n in Unity Unity.exe; do command -v "$n" >/dev/null 2>&1 && { command -v "$n"; exit 0; }; done
+# 6: PATH (not for an explicit UNITY_VERSION: the editor on PATH may be any version)
+if [ -z "${UNITY_VERSION:-}" ]; then
+  for n in Unity Unity.exe; do command -v "$n" >/dev/null 2>&1 && { command -v "$n"; exit 0; }; done
+fi
 
 echo "error: Unity Editor $WANT not found. Install it with Unity Hub, or set UNITY_EDITOR_PATH / create .unity-path.local (see README)." >&2
 exit 1

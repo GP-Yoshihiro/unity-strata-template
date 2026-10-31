@@ -21,9 +21,14 @@ USER_NAME="$(git config user.name || true)"
 [ -n "$USER_NAME" ] || { echo "git user.name is not set -- task claims and history need it: git config --global user.name \"<name>\"" >&2; exit 1; }
 
 # A "Download ZIP" copy has no .git: turn it into a repository and work on a new branch
+ZIP_IMPORT=0
 if [ ! -e "$REPO_ROOT/.git" ]; then   # .git is a folder in clones and a file in worktrees
   echo "No git repository here (ZIP download): initialising one"
-  git init -q -b main
+  ZIP_IMPORT=1
+  git init -q
+  git symbolic-ref HEAD refs/heads/main   # same as `git init -b main`, but works on git < 2.28
+  # LFS filters must be active BEFORE the first `git add`, or binaries are committed as plain blobs
+  git lfs install --local --skip-repo >/dev/null   # filters only: .githooks already chain the LFS hooks
   git add -A
   git commit -q -m "Import unity-strata-template (ZIP download)"
   [ -n "$BRANCH" ] || BRANCH="local/$(printf '%s' "$USER_NAME" | tr -cd 'A-Za-z0-9_-' | tr 'A-Z' 'a-z')"
@@ -34,7 +39,7 @@ if [ -n "$BRANCH" ]; then
   echo "Working branch: $BRANCH"
 fi
 
-git lfs install --local >/dev/null
+git lfs install --local --skip-repo >/dev/null   # filters only: .githooks already chain the LFS hooks
 [ -z "$(git remote)" ] || git lfs pull
 # Shared team hooks (meta check, attribution trailers, no direct push to main); they chain to LFS.
 git config --local core.hooksPath .githooks
@@ -54,14 +59,19 @@ command -v attrib >/dev/null 2>&1 && attrib +h "$(cygpath -w "$HIST_DIR" 2>/dev/
 echo "History folder: $HIST_DIR (hidden, ignored by git)"
 
 echo "== Unity"
-tools/find-unity.sh --list
-UNITY="$(tools/find-unity.sh)"
-echo "Using: $UNITY"
-EDITOR_DIR="$(dirname "$UNITY")"
+# Run through bash: a ZIP extracted on some tools loses the executable bit
+bash tools/find-unity.sh --list
 YAML_MERGE=""
-for c in "$EDITOR_DIR/Data/Tools/UnityYAMLMerge.exe" "$EDITOR_DIR/Data/Tools/UnityYAMLMerge" "$EDITOR_DIR/../Resources/Tools/UnityYAMLMerge"; do
-  [ -f "$c" ] && { YAML_MERGE="$c"; break; }
-done
+if UNITY="$(bash tools/find-unity.sh)"; then
+  echo "Using: $UNITY"
+  EDITOR_DIR="$(dirname "$UNITY")"
+  for c in "$EDITOR_DIR/Data/Tools/UnityYAMLMerge.exe" "$EDITOR_DIR/Data/Tools/UnityYAMLMerge" "$EDITOR_DIR/../Resources/Tools/UnityYAMLMerge"; do
+    [ -f "$c" ] && { YAML_MERGE="$c"; break; }
+  done
+else
+  # Keep going: hooks, history, skills and the index do not need Unity. Install it, then re-run setup.
+  echo "warning: Unity $(sed -n 's/^m_EditorVersion:[[:space:]]*//p' ProjectSettings/ProjectVersion.txt | tr -d '\r') is not installed. Install it with: tools/unity.sh install  (then re-run tools/setup.sh)" >&2
+fi
 if [ -n "$YAML_MERGE" ]; then
   command -v cygpath >/dev/null 2>&1 && YAML_MERGE="$(cygpath -m "$YAML_MERGE")"
   git config --local merge.unityyamlmerge.name "Unity SmartMerge"
@@ -91,6 +101,18 @@ if [ -n "$PS_EXE" ] && "$PS_EXE" -NoProfile -ExecutionPolicy Bypass -File tools/
 else
   echo "warning: Strata Terminal not installed (optional, for local-model runs). Install:" >&2
   echo "  curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh" >&2
+fi
+
+echo "== new-project check"
+ORIGIN="$(git remote get-url origin 2>/dev/null || true)"
+owner_of() { printf '%s' "$1" | sed -n 's#.*github\.com[:/]\([^/]*\)/.*#\1#p'; }
+if [ -n "$HIST_REPO" ] && [ -n "$ORIGIN" ] && [ "$(owner_of "$HIST_REPO")" != "$(owner_of "$ORIGIN")" ]; then
+  echo "warning: team.config.json historyRepo ($HIST_REPO) belongs to a different owner than origin ($ORIGIN)." >&2
+  echo "         For a new project: create your own PRIVATE history repo, then edit team.config.json and .github/CODEOWNERS." >&2
+fi
+if [ "$ZIP_IMPORT" = 1 ] && [ -n "$REMOTE" ]; then
+  echo "First push of a new repository (the pre-push hook blocks main otherwise):"
+  echo "  ALLOW_MAIN_PUSH=1 git push -u origin main && git push -u origin $BRANCH"
 fi
 
 echo

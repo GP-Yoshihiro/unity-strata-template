@@ -17,6 +17,25 @@ function Invoke-Git {
     return $out | ForEach-Object { "$_" }
 }
 
+function Test-SamePath([string]$A, [string]$B) {
+    # Compares two directory paths on every OS. GetFullPath normalises '/' to '\' on Windows; on macOS/Linux
+    # a backslash is an ordinary file-name character, so never rewrite '/' to '\' before calling it.
+    if (-not $A -or -not $B) { return $false }
+    $na = [IO.Path]::GetFullPath($A).TrimEnd('\', '/')
+    $nb = [IO.Path]::GetFullPath($B).TrimEnd('\', '/')
+    $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
+    if ($onWindows) { return $na -ieq $nb }
+    return $na -ceq $nb
+}
+
+function Stop-ProcessTree($Process) {
+    # Kills a process and everything it started (Unity licensing client, shader compilers, agent CLIs).
+    if (-not $Process -or $Process.HasExited) { return }
+    $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
+    if ($onWindows) { & taskkill.exe /PID $Process.Id /T /F 2>&1 | Out-Null; return }
+    try { $Process.Kill($true) } catch { try { $Process.Kill() } catch { } }   # Kill($true) = whole tree (.NET Core 3+)
+}
+
 function Get-GitUser {
     $name = (& git -C $script:RepoRoot config user.name) 2>$null
     $mail = (& git -C $script:RepoRoot config user.email) 2>$null
@@ -129,7 +148,7 @@ function Test-HistoryRepo([string]$Dir) {
     if (-not (Test-Path -LiteralPath (Join-Path $Dir '.git'))) { return $false }
     $top = Invoke-GitIn $Dir rev-parse --show-toplevel | Select-Object -First 1
     if ($LASTEXITCODE -ne 0 -or -not $top) { return $false }
-    return ([IO.Path]::GetFullPath($top.Replace('/', '\')).TrimEnd('\') -ieq [IO.Path]::GetFullPath($Dir).TrimEnd('\'))
+    return (Test-SamePath $top $Dir)
 }
 
 function Sync-History {
@@ -289,6 +308,37 @@ function Publish-Claim([string]$TaskId, $Info, [switch]$Update) {
     if ($Update) { $refspec = "+$refspec" }
     $out = Invoke-Git push origin $refspec -AllowFail
     return [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Output = ($out -join "`n") }
+}
+
+function ConvertTo-PathRegex([string]$Glob) {
+    # Task "paths" entry -> regex. "**" spans folders, "*" / "?" stay inside one folder. An entry without
+    # wildcards also covers everything below it (a folder).
+    $g = $Glob.Replace('\', '/').TrimEnd('/')
+    $sb = New-Object Text.StringBuilder '^'
+    for ($i = 0; $i -lt $g.Length; $i++) {
+        $c = $g[$i]
+        if ($c -eq '*' -and $i + 1 -lt $g.Length -and $g[$i + 1] -eq '*') {
+            if ($i + 2 -lt $g.Length -and $g[$i + 2] -eq '/') { [void]$sb.Append('(.*/)?'); $i += 2 } else { [void]$sb.Append('.*'); $i++ }
+        } elseif ($c -eq '*') { [void]$sb.Append('[^/]*') }
+        elseif ($c -eq '?') { [void]$sb.Append('[^/]') }
+        else { [void]$sb.Append([regex]::Escape([string]$c)) }
+    }
+    if ($g -notmatch '[\*\?]') { [void]$sb.Append('(/.*)?') }
+    return [regex]($sb.Append('$').ToString())
+}
+
+function Test-InTaskPaths([string]$File, [string[]]$TaskPaths, [string]$TaskId) {
+    # True when a changed file is allowed for the task: inside its paths, the .meta of such a file or of a
+    # folder above one, the task's own file, or the generated context index.
+    $f = $File.Replace('\', '/')
+    if ($f -eq '.strata/strata_index.json' -or ($TaskId -and $f -eq "Tasks/items/$TaskId.json")) { return $true }
+    $target = if ($f.EndsWith('.meta')) { $f.Substring(0, $f.Length - 5) } else { $f }
+    foreach ($p in $TaskPaths) {
+        if (-not $p) { continue }
+        if ((ConvertTo-PathRegex $p).IsMatch($target)) { return $true }
+        if ($f.EndsWith('.meta') -and $p.Replace('\', '/').StartsWith("$target/")) { return $true }   # folder .meta
+    }
+    return $false
 }
 
 function Get-PathSegments([string]$Glob) {

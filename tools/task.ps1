@@ -46,12 +46,18 @@ function Get-DefaultBranch {
 switch ($Command) {
     'list' {
         $claims = @(Get-RemoteClaims)
+        $staleHours = [double](Get-TeamConfig).staleClaimHours
         $rows = foreach ($t in (Get-AllTasks | Sort-Object priority, id)) {
             if (-not $All -and $t.status -eq 'done') { continue }
             $c = $claims | Where-Object { $_.Task -eq $t.id } | Select-Object -First 1
             # A live claim is the truth for in-flight work (the task file on this branch may still say todo)
+            $state = if ($c) { $c.State } else { $t.status }
+            if ($c -and $c.State -eq 'doing' -and $staleHours -gt 0 -and $c.Since) {
+                # "doing" for longer than staleClaimHours: a crashed loop or a forgotten claim -- ask its owner
+                try { $age = ((Get-Date) - [datetime]$c.Since).TotalHours; if ($age -ge $staleHours) { $state = "doing (stale {0:N0}h)" -f $age } } catch { }
+            }
             [pscustomobject]@{
-                Id = $t.id; Status = if ($c) { $c.State } else { $t.status }; P = $t.priority
+                Id = $t.id; Status = $state; P = $t.priority
                 Owner = if ($c) { "$($c.User) ($($c.Agent))" } else { '' }; Title = $t.title
             }
         }

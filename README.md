@@ -10,7 +10,7 @@ Unity Editor のバッチモード、AI エージェント（**Codex / Claude Co
 
 ## 🚀 新しい端末でのセットアップ
 
-前提: Git + Git LFS、Unity Hub（`ProjectSettings/ProjectVersion.txt` の版）、PowerShell（Windows は標準。macOS/Linux は `pwsh`）。
+前提: Git + Git LFS、Unity Hub、PowerShell（Windows は標準。macOS/Linux は `pwsh`）。Unity エディタ本体は `setup` の後に `tools\unity.cmd install`（`tools/unity.sh install`）で `ProjectVersion.txt` と同じ版・changeset を Hub CLI から入れられます。バッチ実行には、その PC で一度 Unity Hub にサインインしてライセンスを有効化しておく必要があります。
 任意: [Codex CLI](https://www.npmjs.com/package/@openai/codex)（`npm.cmd install -g @openai/codex`）、Strata Terminal（下記）。
 Windows では深いパスだと Unity や Codex のサンドボックスが失敗するので、`C:\dev\<name>` のような浅い場所に clone してください。
 
@@ -39,6 +39,14 @@ git clone https://github.com/GP-Yoshihiro/unity-strata-template.git && cd unity-
 ```powershell
 tools\setup.cmd -Branch feature/my-game -Remote https://github.com/<you>/<repo>.git
 ```
+
+**ZIP から新しいプロジェクト（新規リポジトリ）を作るときのチェックリスト** — このひな形は作者の環境（`GP-Yoshihiro`）を指したままなので、最初に次を自分用に変えてください（`setup` も不一致を警告します）。
+1. GitHub に空のリポジトリを作り、`tools\setup.cmd -Remote <URL>` を実行。
+2. 最初の `main` だけは pre-push フックを一度だけ迂回して push（以降は PR 経由）: PowerShell は `$env:ALLOW_MAIN_PUSH=1; git push -u origin main; Remove-Item Env:ALLOW_MAIN_PUSH`、bash は `ALLOW_MAIN_PUSH=1 git push -u origin main`。
+3. **非公開**の履歴リポジトリ（例: `<you>/<repo>-history`、README 1 枚で初期化）を作り、`team.config.json` の `historyRepo` を書き換える。共有しない場合は `""` にするとローカル保存のみ。
+4. `.github/CODEOWNERS` のユーザー名、この README の clone URL・`gh api` コマンドのリポジトリ名を置き換える。
+5. ブランチ保護（main は PR 必須、`repo-checks` 必須）を設定。`Tasks/items/T-261031-0001.json`（見本タスク）は書き換えるか削除。
+6. Unity の版を決める: そのまま `tools\unity.cmd install`、または別の版にするなら `tools\unity.cmd upgrade <version>` をタスクとして実施（下記「Unity の版」）。
 
 `setup` が行うこと（何度実行しても安全）: ZIP の場合の git 初期化と新規ブランチ作成、LFS 有効化、**チーム用 git フックの有効化**（`core.hooksPath=.githooks`）、**非公開・非表示の履歴フォルダ `.history/` の作成**、Unity 検出、UnityYAMLMerge のマージドライバ登録、エージェントスキル同期、コンテキスト索引の再生成、Strata の有無の確認。
 `tools\*.cmd` は PowerShell の実行ポリシーに関係なく動くラッパーです（`.ps1` を直接実行できない環境でも使えます）。
@@ -84,6 +92,8 @@ tools\loop.cmd -Once
 - 人がエディタで開かない **ループ専用の clone** を、浅いパス（`%TEMP%` 配下は不可）に用意してください。
 - `-Once`（1 件で終了）、`-MaxTasks n`、`-TestPlatform All`、`-Agent codex|claude`。停止は `tools\loop.cmd -Stop`（今のタスクを終えてから止まる）。ログは `Logs\loop.log`。
 - Strata が止まっていれば自動で `up` します。
+- タスクの `paths` 外の変更は自動で取り消し、タスク間で作業ツリーをリセットします（コミットできなかった変更は `Logs/loop-unsaved-*.patch`）。
+- **自己改善パス**: 各タスクの結果を非公開履歴の `metrics/` に記録し、24 時間ごと（`-ImproveEveryHours`、`0` で無効。キューが空なら最短 6 時間）に、その集計と `Prompts/PROMPT_DAILY_IMPROVEMENT.md` をエージェントに渡して、日計レポート・`Docs/agent-lessons.md`（毎回のプロンプト先頭に入る既知の落とし穴）・指示書の改善・タスク分割を **draft PR** で提案させます。人間がマージするまでループはそれを使いません。今すぐ実行: `tools\loop.cmd -ImproveNow -Once`。
 
 ### 衝突の回避（起きる前に止める）
 | 仕組み | 内容 |
@@ -127,6 +137,7 @@ gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protectio
 | `CLAUDE.md` | `@AGENTS.md` を import（Claude Code 用） |
 | `.agents/skills/` | 共通スキル `unity-workflow` / `team-workflow` / `strata-delegate`（Codex が読む場所） |
 | `.claude/skills/` | 上記のコピー（Claude Code 用、`setup` で同期） |
+| `.claude/settings.json` | Claude Code の権限（`.history/` の読み取り、`.meta` の編集、force push、`--no-verify` を拒否） |
 | `.codex/config.toml` | Codex のプロジェクト設定（workspace-write + ネットワーク許可） |
 | `tools/templates/codex-local.config.toml` | ローカルモデル用 Codex 設定（`tools\codex-local.cmd` が `.codex-local/` に展開） |
 | `Prompts/unity_csharp_coder.md` | 実装サイクル指示書 |
@@ -175,10 +186,20 @@ gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protectio
    - `UNITY_EDITORS_DIR`（追加ルート。Windows は `;`、他は `:` 区切り）
    - `../UnityEditors/<版>`、`./.unity-editors/<版>`（ポータブル配置用の相対パス）
    - Unity Hub 既定のインストール先、Hub の `secondaryInstallPath`、Hub で手動登録したエディタ
-5. 同じ major.minor → 最新版（警告付きフォールバック。`-Strict` / `STRICT=1` で無効）
+5. 同じ major.minor の**より新しいパッチ版**だけ（警告付きフォールバック。`-Strict` / `STRICT=1` で無効）。古い版や別の major.minor は**使いません**（プロジェクトが黙ってダウン／アップグレードされ、チーム全員に波及するため）
 6. `PATH` 上の `Unity`
 
 確認: `tools\unity.cmd path` / `tools/find-unity.sh --list`
+
+### Unity の版（インストールと更新）
+| 目的 | Windows | macOS / Linux |
+|---|---|---|
+| `ProjectVersion.txt` の版を Hub CLI でインストール（changeset 指定込み） | `tools\unity.cmd install` | `tools/unity.sh install` |
+| モジュール付き（例: Android） | `tools\unity.cmd install 6000.6.7f1 --module android` | `tools/unity.sh install 6000.6.7f1 --module android` |
+| 版を上げる（インストール → 一度バッチで開いて移行） | `tools\unity.cmd upgrade <version>` | `tools/unity.sh upgrade <version>` |
+
+Unity Hub は `UNITY_HUB_PATH` か既定のインストール先から探します。版の更新は `ProjectSettings/`・`Packages/` を変えるので、それらを `paths` に持つタスクを claim してから行い、`test All` を通して PR にしてください。マージ後、各メンバーは `install` するだけで揃います。
+チーム／24 時間運用では LTS（執筆時点で Unity 6.3 LTS、2027 年 12 月までサポート）の方が更新頻度が低く安定です。現在の `6000.6.x` は最新機能を含むサポート版（Update リリース）です。
 
 ## 🔄 Unity コマンド
 
@@ -188,10 +209,11 @@ gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protectio
 | PlayMode / 全部 | `tools\unity.cmd test PlayMode` / `All` | `tools/unity.sh test All` |
 | `.meta` 生成（再インポート） | `tools\unity.cmd refresh` | `tools/unity.sh refresh` |
 | 任意メソッド | `tools\unity.cmd exec Ns.Class.Method ...` | `tools/unity.sh exec ...` |
+| エディタのインストール / 版の更新 | `tools\unity.cmd install` / `upgrade <ver>` | `tools/unity.sh install` / `upgrade <ver>` |
 | エディタで開く | `tools\unity.cmd open` | `tools/unity.sh open` |
 | コンテキスト索引更新 / 検証 | `tools\strata-index.cmd [-Verify]` | `pwsh tools/strata-index.ps1 [-Verify]` |
 
-テスト結果は `Logs/editmode-results.xml` / `Logs/UnityTest-EditMode.log`。終了コード `0` 成功、`2` テスト失敗。
+テスト結果は `Logs/editmode-results.xml` / `Logs/UnityTest-EditMode.log`。終了コード `0` 成功、`2` テスト失敗、`124` タイムアウト（`UNITY_TIMEOUT_MINUTES`、既定 60 分、`0` で無制限）。結果 XML が出ない実行は失敗として扱います。
 
 ## 🧩 コンテキスト節約 & 開発ルール
 1. **L1/L2/L3 の層構成**: `.strata/cache_config.json` で層を定義。プロンプトは L1（設計・asmdef）→ L2（関連ソース）→ L3（diff・ログ）の順で組み、先頭を毎回同一に保つと Strata のプロンプトキャッシュが効く。
@@ -207,7 +229,7 @@ gh api -X PATCH repos/GP-Yoshihiro/unity-strata-template/branches/main/protectio
 - `team.config.json` 履歴リポジトリなどチーム共通の設定
 - `.strata/` `launch.json`（Strata の起動設定）, `cache_config.json`（層定義）, `strata_index.json`（コンテキストマップ）
 - `.githooks/` チーム共通の git フック／`.github/` CODEOWNERS・PR テンプレート・CI
-- `Prompts/` AI 指示書／`Reports/` 日計レポート／`Logs/` Unity CLI 出力（非コミット）
+- `Prompts/` AI 指示書／`Docs/agent-lessons.md` エージェント向けの既知の落とし穴／`Reports/` 日計レポート／`Logs/` Unity CLI 出力（非コミット）
 - `tools/` Unity・Strata・Codex の起動、タスク・チーム・履歴、セットアップのスクリプト
 
 ## 🔒 コミットしないもの（端末ごとの設定）

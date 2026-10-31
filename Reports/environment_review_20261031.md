@@ -1,0 +1,96 @@
+# 環境立ち上げ・総合レビュー（2026-10-31）
+
+対象: `unity-strata-template`（ZIP から新規リポジトリを作って使う Unity 汎用ひな形）
+実施環境: クラウドのコンテナ（Linux、Unity・Unity Hub・pwsh・Strata なし、Unity のサーバーへの通信は不可）
+
+凡例: 🔴 動かない／壊れる　🟠 条件次第で事故になる　🟡 改善推奨　✅ 本ブランチで修正済み　📝 提案のみ（未実装）
+
+---
+
+## 1. 立ち上げ結果（このコンテナで実行）
+
+| 手順 | 結果 |
+|---|---|
+| `tools/setup.sh` | 修正前は **`Permission denied` で停止**（後述 1-1）。修正後は最後まで完了 |
+| git フック / LFS / `.history/` | 有効化・作成できた（履歴リポジトリは非公開でアクセス不可 → ローカル保存に切り替わることを確認） |
+| Unity | 未インストール → 警告を出して続行（修正後）。`install` / `upgrade` は Unity Hub の代わりの偽物で動作を確認 |
+| コンテキスト索引 | pwsh がないため `strata-index.ps1` は動かせず。同じハッシュ計算を移植して **保存済みの contentHash と一致することを確認**し、そのうえで更新 |
+| Strata | 未インストール（このコンテナでは GPU もモデルもないため対象外） |
+| チームルールの claim | pwsh がないため `tools/task.* claim` は実行できず。作業は指定ブランチ `claude/gallant-ptolemy-jekpyi` で実施 |
+
+**各 PC で人が行う残りの手順**: `tools\setup.cmd` → `tools\unity.cmd install` → Unity Hub に一度サインイン（ライセンス）→ `tools\unity.cmd test All` → `tools\strata.cmd plan` / `up` → `tools\strata.cmd check` → `tools\loop.cmd -Once`。
+
+---
+
+## 2. 指摘と対応
+
+### 2-1. セットアップ／ZIP からの新規リポジトリ化
+| | 内容 | 対応 |
+|---|---|---|
+| 🔴 | `tools/setup.sh`・`find-unity.sh`・`unity.sh` に git 上の実行権限がなく、README どおり `tools/setup.sh` を実行すると macOS/Linux で `Permission denied` | ✅ 実行権限を付与。setup.sh 内は `bash tools/...` で呼ぶ（ZIP 展開で権限が落ちても動く）。CI で権限と `bash -n` を検査 |
+| 🔴 | `setup.cmd`・`strata.cmd`・`codex-local.cmd` が `where pwsh >/dev/null`。cmd には `/dev/null` がなく、推奨の `C:\dev\` に置くと **`C:\dev\null` というファイルを作る**（無い場合はリダイレクト失敗で pwsh があっても Windows PowerShell 5.1 にフォールバック） | ✅ `>nul` に修正。CI で再発を検出 |
+| 🔴 | 「何度実行しても安全」なはずの setup.sh が **2 回目で停止**（`git lfs install --local` が `.githooks/pre-push` を上書きできずエラー、`set -e` で中断） | ✅ `git lfs install --local --skip-repo`（フィルターのみ。LFS フックは `.githooks` が連結済み） |
+| 🟠 | Unity が見つからないと setup が中断し、スキル同期・索引更新・Strata 確認が行われない | ✅ 警告して続行し、`tools/unity.* install` を案内 |
+| 🟠 | ZIP 取り込み時、`git lfs install` より前に `git add -A` → 画像・モデルが **LFS でなく通常の blob で最初のコミットに入る** | ✅ LFS フィルターを先に有効化 |
+| 🟠 | setup.ps1 の「自分のリポジトリか」判定が `'/'→'\'` 置換後に `GetFullPath` しており、macOS/Linux の pwsh では常に不一致 → **既存の clone を ZIP と誤認して全変更をコミットし新ブランチを作る**おそれ。同じ比較を使う `Test-HistoryRepo` も常に false で、mac/Linux では履歴が共有されない | ✅ ZIP 判定は `.git` の有無に変更（setup.sh と同じ）。パス比較は `Test-SamePath` に統一 |
+| 🟠 | 新規リポジトリは pre-push フックが `main` への push を拒否するため、**最初の main を push できない** | ✅ setup が初回 push のコマンドを表示。README にチェックリスト |
+| 🟡 | `team.config.json`（履歴リポジトリ）・`CODEOWNERS`・README の URL が作者の `GP-Yoshihiro` のまま。別プロジェクトで使うと他人の履歴リポジトリを参照し続ける | ✅ origin と履歴リポジトリの所有者が違えば setup が警告。README に「ZIP から新規プロジェクトを作るときのチェックリスト」 |
+| 🟡 | `git init -b` は git 2.28 未満で失敗 | ✅ `git symbolic-ref` で同等の処理 |
+| 📝 | GitHub の「Download ZIP」は、リポジトリ設定で「Include Git LFS objects in archives」を有効にしない限り LFS 実体を含まない | 素材を LFS で入れる前に設定を有効化するか、テンプレートには素材を入れない運用に |
+
+### 2-2. Unity（最新版への対応・インストール・実行ファイルのパス）
+| | 内容 | 対応 |
+|---|---|---|
+| 🔴 | PlayMode テストが `IEnumerator` を使うのに `using System.Collections;` がなく **コンパイルエラー**。バッチのテスト実行はどれか 1 つのアセンブリでもコンパイルに失敗すると止まるため、**EditMode を含むすべてのテストとループが失敗**する | ✅ 追加。`LogAssert.Expect` を `AddComponent` の前に移動。索引を更新。同じ落とし穴を `Docs/agent-lessons.md` に記載 |
+| 🟠 | 見つからないときのフォールバックが「同じ major.minor、無ければ**一番新しい版**」。古い版や別の major でも黙って開き、**プロジェクトが勝手にアップ／ダウングレード**されてチーム全体に波及する | ✅ 同じ major.minor の**新しいパッチ版だけ**（警告付き）。それ以外はエラーにして `install` / `upgrade` を案内 |
+| 🟠 | Unity が終了コード 0 で結果 XML を出さないと**テスト合格扱い**（ループが「合格」の PR を出す） | ✅ 結果 XML がなければ失敗扱い |
+| 🟠 | `Start-Process -Wait` は子プロセスの終了まで待つため、Unity が残す `Unity.Licensing.Client` などで**バッチ実行が戻らない**ことがある。タイムアウトもなく、無人ループが止まる | ✅ Unity 本体だけを待つ。`UNITY_TIMEOUT_MINUTES`（既定 60 分）を超えたらプロセスツリーごと停止し終了コード 124 |
+| 🟡 | インストール手段がなく「Hub で入れてください」だけ | ✅ `tools/unity.* install [版] [--module ...]`（Unity Hub CLI。`ProjectVersion.txt` の changeset も渡す）、`tools/unity.* upgrade <版>`（インストール → 一度バッチで開いて移行 → 版を確認）、`find-unity -Hub` / `--hub` |
+| ✅ | 実行ファイルの解決順（引数 → 環境変数 → `.unity-path.local` → Hub の既定・副インストール先・手動登録 → PATH）は Windows/macOS/Linux とも妥当。偽のエディタ配置で 6 パターンを確認 | — |
+| 📝 | **版の選択**: 現在の `6000.6.7f1` は Unity 6.6（Update リリース）。最新の LTS は Unity 6.3（2027-12 までサポート）。Unity 6.0 LTS は 2026-10 にサポート終了。チーム・24 時間運用では更新頻度の低い LTS を推奨。変更する場合は `upgrade` を専用タスクで | 判断は人間に委ねる |
+| 📝 | CI では Unity のテストを実行していない（ライセンスが必要）。自己ホストランナー、または GameCI ＋ `UNITY_LICENSE` シークレットで PR ごとに EditMode を回すと、ループ以外（人間）の変更も守れる | 提案 |
+
+### 2-3. Strata とメイン AI（Claude / Codex）の接続
+| | 内容 | 対応 |
+|---|---|---|
+| 🟠 | `tools\agent.cmd claude` は `claude -p` のみで権限モードの指定がない。非対話では許可の確認に答えられず、**無人ループで Claude を使うと編集できない** | ✅ `--permission-mode acceptEdits`。`.claude/settings.json` を追加（`.history/` の読み取り・`.meta` の編集・force push・`--no-verify` を拒否。Codex の ACL と同じ保護を Claude 側にも） |
+| 🟠 | `tools\agent.cmd codex` は、プロジェクトが「信頼済み」でないと `.codex/config.toml` が無視され読み取り専用になる | ✅ `codex exec --sandbox workspace-write` を明示 |
+| 🟡 | スキル `unity-workflow` が廃止済みの `Tasks/backlog.json`・`Tasks/completed.json`・`--profile strata` を案内（現行は `Tasks/items/` と `tools\codex-local.cmd`）。`cache_config.json` の L3 も同様 | ✅ 修正し `.claude/skills` に同期 |
+| 📝 | 既定モデル `Qwen3.8-Flash-Next Coder IQ1_M`（約 1.75 bit 量子化）は実装役としては品質が低め。おすすめの分担: ログ要約・下書き・一次レビューは Strata、**実装は `-Agent claude` / `codex`**（クラウド）か、VRAM に余裕があれば IQ3 以上 | 提案 |
+| 📝 | Strata は Anthropic 互換 API もあるので、`ANTHROPIC_BASE_URL=http://127.0.0.1:8080` で Claude Code 自体をローカルモデルで動かす `claude-local` も作れる（`codex-local` と同じ形）。実機での確認が必要なため未実装 | 提案 |
+| 📝 | `strata launch --status/--stop/--no-tui`、`/metrics`、`connect codex --check` は公開 README に記載がなく、このコンテナでは確認できない。実機で `strata --help` と `tools\strata.cmd check` で確認を | 実機で確認 |
+| 📝 | `codex-local` は `approval_policy = "never"` かつサンドボックス内ネットワーク許可。タスク本文経由のプロンプトインジェクションで外部送信される余地がある。ループのエージェントは Unity を実行しないので、`strata ask`（localhost）以外を遮断できるならより安全 | 提案 |
+
+### 2-4. 24 時間稼働（無人ループ）と能力向上の仕組み
+| | 内容 | 対応 |
+|---|---|---|
+| 🔴 | タイムアウト時の停止が `taskkill.exe` 固定 → **macOS/Linux でループが例外終了** | ✅ `Stop-ProcessTree`（Windows は taskkill、それ以外は .NET の Kill(true)） |
+| 🟠 | タスクの `paths` 外の変更も `git add -A` でそのままコミット（ルール 2 が無人時に守られない） | ✅ エージェント実行後に範囲外の変更を取り消し、次のラウンドでエージェントに通知 |
+| 🟠 | コミットが pre-commit で拒否されると、変更が作業ツリーに残ったまま `done` になり、**実装のない「合格」PR**が出たうえ、**次のタスクに持ち越される** | ✅ 変更なし／コミット拒否は `block` 扱い。残った変更は `Logs/loop-unsaved-*.patch` に保存して作業ツリーをリセット |
+| 🟡 | 能力向上の仕組みが「日次改善の指示書」だけで、誰も実行しない（スケジュールもデータの受け渡しもない）。サンドボックスのエージェントは `.history/` を読めないので指示書どおりに集計もできない | ✅ 下記「能力向上ループ」を実装 |
+| 🟡 | `team.config.json` の `staleClaimHours` がどこでも使われていない（落ちたループの claim が永久に `doing`） | ✅ `task list` で `doing (stale 30h)` と表示 |
+
+**能力向上ループ（実装済み）**
+1. **記録**: ループがタスクごとに `rounds / passed / csErrors / outOfScope / timeouts / minutes` を非公開履歴の `metrics/loop-YYYY-MM.jsonl` に追記（プロンプト本文は含めない）。
+2. **知識**: `Docs/agent-lessons.md`（既知の落とし穴、1 行 1 ルール）を毎回のプロンプト先頭に入れる。L1 層なのでプロンプトの先頭が毎回同じになり、Strata のプロンプトキャッシュも効く。Claude / Codex の対話利用でも AGENTS.md から参照。
+3. **改善パス**: 24 時間ごと（`-ImproveEveryHours`、キューが空なら最短 6 時間、`-ImproveNow` で即時）に、集計結果・claim 状況・ループログと `Prompts/PROMPT_DAILY_IMPROVEMENT.md` をエージェントに渡し、日計レポート・lessons の追記整理・指示書の補正・タスク分割を作らせる。
+4. **人間のゲート**: 改善パスは常に **draft PR**。ループは default ブランチ上のタスク・lessons・指示書しか使わないので、**人間がマージするまで自己改変は反映されない**（暴走しない）。
+
+### 2-5. チーム開発
+| | 内容 | 対応 |
+|---|---|---|
+| ✅ | claim（`refs/claims/<id>` の原子的作成）、paths の重複拒否、1 タスク 1 ファイル、PR マージで自動解放、トレーラーによる帰属、履歴の非公開分離は、複数の人間とエージェントの同時作業に対して設計がしっかりしている | — |
+| 📝 | フォークからの PR では `release-claims` のトークンが読み取り専用になり claim が解放されない（stale 表示で気付ける）。フォーク運用をするなら `pull_request_target` 化を検討 | 提案 |
+| 📝 | PowerShell は CI で構文チェックのみ。`Test-PathOverlap` / `Test-InTaskPaths` / 版の比較などを Pester で単体テストすると、Windows 以外での退行（今回の `GetFullPath` のような）を防げる | 提案 |
+| 📝 | CODEOWNERS・ブランチ保護は 1 人運用向け（承認 0）。メンバーが増えたら README の `gh api` で承認 1・Code Owner 必須に | 既存の README どおり |
+| 📝 | ループは毎周 `git pull` するので、ループ実行中に `tools/` の変更がマージされると次の周から新しいスクリプトで動く。大きな変更の前は `tools\loop.cmd -Stop` | 運用 |
+
+---
+
+## 3. このブランチで確認したこと
+- `setup.sh` を 2 回連続で実行して完走（修正前は 1 回目で停止）。
+- `find-unity.sh`: 「該当なし／古い版と別 minor のみ／新しいパッチのみ／完全一致／`UNITY_VERSION` 指定／`STRICT=1`」の 6 パターン。
+- `unity.sh install`（偽の Hub。changeset と `--module` の受け渡し、インストール済みならスキップ）、`unity.sh upgrade`（複製したプロジェクトで `ProjectVersion.txt` が更新されることを確認）、結果 XML なし → 終了コード 1。
+- paths の範囲判定（フォルダ、`*`、`**`、フォルダの `.meta`、タスク自身のファイル）を同じアルゴリズムの移植で 11 パターン。
+- コンテキスト索引: 保存済み contentHash の再現 → 更新後の値を検証。`check-meta.sh` OK。PowerShell の ASCII 検査 OK。
+- **未確認（pwsh・Unity・Strata がないため）**: PowerShell スクリプトの実行（CI の構文チェックで検証される）、Unity 実機でのテスト、Strata 実機。マージ前に Windows の PC で `tools\setup.cmd`（2 回）→ `tools\unity.cmd test All` → `tools\loop.cmd -Once` の確認を推奨。

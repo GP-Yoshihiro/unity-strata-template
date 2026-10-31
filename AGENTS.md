@@ -13,12 +13,15 @@
 - Strata（ローカル推論サーバー https://github.com/Niko1221/Strata）: 起動設定 `.strata/launch.json`
 - コンテキスト節約: `.strata/cache_config.json`（L1/L2/L3 の層定義）, `.strata/strata_index.json`（コンテキストマップ。本テンプレート独自で Strata 本体の機能ではない）
 - 指示書: `Prompts/unity_csharp_coder.md`（実装サイクル）, `Prompts/PROMPT_DAILY_IMPROVEMENT.md`（日次改善）
+- 既知の落とし穴: `Docs/agent-lessons.md`（**作業前に読む**。無人ループは毎回プロンプト先頭に入れる。日次の改善パスが draft PR で更新する）
 
 ## コマンド（端末非依存。Unity / Strata のパスは自動解決されるので絶対パスを書かない）
 | 目的 | Windows (PowerShell / cmd) | macOS / Linux / Git Bash |
 |---|---|---|
 | EditMode / PlayMode テスト | `tools\unity.cmd test EditMode` / `PlayMode` / `All` | `tools/unity.sh test EditMode` |
 | .meta 生成/再インポート | `tools\unity.cmd refresh` | `tools/unity.sh refresh` |
+| Unity エディタのインストール（`ProjectVersion.txt` の版） | `tools\unity.cmd install` | `tools/unity.sh install` |
+| Unity の版を上げる（専用タスクで） | `tools\unity.cmd upgrade <version>` | `tools/unity.sh upgrade <version>` |
 | 任意メソッド実行 | `tools\unity.cmd exec Ns.Class.Method [args]` | `tools/unity.sh exec ...` |
 | コンテキスト索引 更新 / 検証 | `tools\strata-index.cmd` / `-Verify` | `pwsh tools/strata-index.ps1 [-Verify]` |
 | タスク一覧 / 作成 / 着手 / 完了 / 保留 | `tools\task.cmd list` / `new` / `claim <id>` / `done <id>` / `block <id> -Note "理由"` | `pwsh tools/task.ps1 ...` |
@@ -28,7 +31,7 @@
 | ローカルモデル 起動 / 状態 / 停止 | `tools\strata.cmd up` / `status` / `stop` | `pwsh tools/strata.ps1 ...` |
 | ローカルモデルへ委譲 | `tools\strata.cmd ask "質問" -File <path>` | `pwsh tools/strata.ps1 ask ...` |
 
-終了コード: `0` 成功 / `2` テスト失敗 / その他 Unity 起動・設定エラー。結果は `Logs/*-results.xml` と `Logs/UnityTest-*.log`。
+終了コード: `0` 成功 / `2` テスト失敗 / `124` タイムアウト（`UNITY_TIMEOUT_MINUTES`、既定 60 分）/ その他 Unity 起動・設定エラー（結果 XML が無ければ失敗扱い）。結果は `Logs/*-results.xml` と `Logs/UnityTest-*.log`。
 
 ## チーム作業ルール（衝突の回避と防御）
 1. **着手前に必ず claim する。** `tools\task.cmd claim <id> -Agent <自分の種別>`。claim は origin の `refs/claims/<id>` を原子的に作るので、同じタスクの二重着手や、`paths` が重なるタスクの同時着手は拒否される。拒否されたら作業しない。
@@ -59,6 +62,8 @@ Codex / Claude Code が指揮役、Strata のローカルモデルが作業役�
 
 ## ローカルモデル（Strata）での 24 時間稼働
 - 無人運用は `tools\loop.cmd` で行う：未着手タスクを選ぶ → claim → `codex-local` がコードを編集 → **ループ（サンドボックスの外）が** `.meta` 生成・索引更新・Unity テストを実行 → 失敗内容を渡して修正（`-MaxFixRounds` 回まで）→ 成功なら PR、失敗が続けば draft PR ＋ `block`。
+- ループは claim したタスクの `paths` 外の変更を**自動で取り消す**（エージェントにも通知）。タスク間で作業ツリーをリセットし、コミットできなかった変更は `Logs/loop-unsaved-*.patch` に残す。
+- **能力向上の仕組み**: タスクごとの結果（ラウンド数・成否・CS エラーコード・範囲外変更・所要時間）を非公開履歴の `metrics/loop-YYYY-MM.jsonl` に記録し、24 時間ごと（`-ImproveEveryHours`、キューが空なら最短 6 時間）に改善パスを実行する。改善パスは日計レポート・`Docs/agent-lessons.md`・指示書・タスク分割を **draft PR** で提案し、人間がマージするまでループはそれを使わない（ループが拾うのは default ブランチ上のタスクだけ）。
 - ループ専用の clone（エディタで開かない、`C:\dev\<name>-agent` のような浅いパス、`%TEMP%` 配下は不可）で動かす。停止は `tools\loop.cmd -Stop`、ログは `Logs\loop.log`。
 - **ループから呼ばれたエージェントは、Unity・`tools\unity.*`・git commit/push を実行しない**（サンドボックスからは Unity を起動できない。実行はループが行う）。
 - 単発でローカルモデルを使うときは `tools\agent.cmd codex-local` を使う（API 課金なし。Codex の設定は `tools/templates/codex-local.config.toml`）。

@@ -13,18 +13,26 @@
          - <repo>/../UnityEditors, <repo>/.unity-editors          (portable, repo-relative)
          - Unity Hub default install dir and Hub "secondaryInstallPath"
          - Editors registered manually in Unity Hub (editors*.json)
-    5. Same major.minor, then the newest installed editor (warning) -- disabled by -Strict
+    5. A NEWER patch of the same major.minor (warning) -- disabled by -Strict. Older editors and other
+       major/minor versions are never picked silently: opening the project with them would downgrade or
+       upgrade it for the whole team. Use `tools/unity.* install` or `tools/unity.* upgrade <version>`.
     6. 'Unity' / 'Unity.exe' on PATH
+
+  -Version <v> looks for that version instead of ProjectVersion.txt (used by `unity.ps1 upgrade`).
+  -Hub prints the Unity Hub executable (UNITY_HUB_PATH, default install folders, PATH) for CLI installs.
 
 .EXAMPLE
   ./tools/find-unity.ps1            # prints the editor path
   ./tools/find-unity.ps1 -List      # lists every editor found
+  ./tools/find-unity.ps1 -Hub       # Unity Hub executable (for headless installs)
 #>
 [CmdletBinding()]
 param(
     [string]$UnityPath,
+    [string]$Version,
     [switch]$Strict,
-    [switch]$List
+    [switch]$List,
+    [switch]$Hub
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,6 +72,7 @@ function Get-ExeRelPaths {
 }
 
 function Get-ProjectVersion {
+    if ($Version) { return $Version }
     $f = Join-Path $RepoRoot 'ProjectSettings/ProjectVersion.txt'
     if (-not (Test-PathSafe -LiteralPath $f)) { return $null }
     $m = Select-String -LiteralPath $f -Pattern '^m_EditorVersion:\s*(\S+)' | Select-Object -First 1
@@ -139,6 +148,23 @@ function Get-InstalledEditors {
         Sort-Object Key -Descending
 }
 
+function Find-UnityHub {
+    if ($env:UNITY_HUB_PATH -and (Test-PathSafe -LiteralPath $env:UNITY_HUB_PATH -PathType Leaf)) { return $env:UNITY_HUB_PATH }
+    $candidates = if ($OnWindows) {
+        @((Join-Path "$env:ProgramFiles" 'Unity Hub\Unity Hub.exe'), (Join-Path "$env:LOCALAPPDATA" 'Programs\Unity Hub\Unity Hub.exe'))
+    } elseif ($OnMac) {
+        @('/Applications/Unity Hub.app/Contents/MacOS/Unity Hub', (Join-Path $HOME 'Applications/Unity Hub.app/Contents/MacOS/Unity Hub'))
+    } else {
+        @('/usr/bin/unityhub', '/opt/unityhub/unityhub', (Join-Path $HOME 'Applications/Unity Hub.AppImage'), (Join-Path $HOME 'Applications/UnityHub.AppImage'))
+    }
+    foreach ($c in $candidates) { if (Test-PathSafe -LiteralPath $c -PathType Leaf) { return $c } }
+    $cmd = Get-Command 'unityhub', 'Unity Hub' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { return $cmd.Source }
+    throw 'Unity Hub not found. Install it from https://unity.com/download (or set UNITY_HUB_PATH).'
+}
+
+if ($Hub) { Write-Output (Find-UnityHub); return }
+
 if ($List) {
     Write-Host "Project version: $(Get-ProjectVersion)"
     Get-InstalledEditors | Format-Table Version, Path -AutoSize | Out-String | Write-Host
@@ -151,6 +177,7 @@ foreach ($candidate in @(
         @{ Src = 'UNITY_EDITOR_PATH'; Val = $env:UNITY_EDITOR_PATH },
         @{ Src = '.unity-path.local'; Val = $(if (Test-PathSafe -LiteralPath (Join-Path $RepoRoot '.unity-path.local')) { (Get-Content -LiteralPath (Join-Path $RepoRoot '.unity-path.local') | Where-Object { $_ -and -not $_.StartsWith('#') } | Select-Object -First 1) }) })) {
     if (-not $candidate.Val) { continue }
+    if ($Version -and $candidate.Src -ne '-UnityPath') { continue }   # an explicit -Version must not be overridden by the usual editor
     $r = Resolve-FromRepo $candidate.Val
     if ($r) { Write-Verbose "Unity from $($candidate.Src)"; Write-Output $r; return }
     Write-Warning "$($candidate.Src) is set but no Unity executable was found at '$($candidate.Val)'"
@@ -164,16 +191,26 @@ if ($want) {
     if ($exact) { Write-Output $exact.Path; return }
 }
 if (-not $Strict -and $editors.Count -gt 0) {
-    $mm = if ($want) { ($want -split '\.')[0..1] -join '.' } else { $null }
-    $pick = $editors | Where-Object { $mm -and $_.Version.StartsWith("$mm.") } | Select-Object -First 1
-    if (-not $pick) { $pick = $editors | Select-Object -First 1 }
-    Write-Warning "Unity $want not installed; falling back to $($pick.Version). Opening the project may upgrade it -- install $want via Unity Hub to avoid that."
-    Write-Output $pick.Path
-    return
+    $pick = $null
+    if ($want) {
+        # Only a newer patch of the same major.minor: anything else would silently up/downgrade the project
+        $mm = ($want -split '\.')[0..1] -join '.'
+        $wantKey = Get-VersionKey $want
+        $pick = $editors | Where-Object { $_.Version.StartsWith("$mm.") -and $_.Key -gt $wantKey } | Select-Object -Last 1
+    } else {
+        $pick = $editors | Select-Object -First 1
+    }
+    if ($pick) {
+        Write-Warning "Unity $want not installed; using $($pick.Version) (same major.minor). Install $want (tools\unity.cmd install) to stay on the team's version."
+        Write-Output $pick.Path
+        return
+    }
+    $have = ($editors | ForEach-Object { $_.Version }) -join ', '
+    throw "Unity $want is not installed (found: $have). Install it: tools\unity.cmd install   -- or move the project to another version on purpose: tools\unity.cmd upgrade <version>"
 }
 
-# 6: PATH
-foreach ($name in @('Unity', 'Unity.exe')) {
+# 6: PATH (not for an explicit -Version: the editor on PATH may be any version)
+foreach ($name in $(if ($Version) { @() } else { @('Unity', 'Unity.exe') })) {
     $cmd = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cmd) { Write-Output $cmd.Source; return }
 }
