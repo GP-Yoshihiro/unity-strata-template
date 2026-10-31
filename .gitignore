@@ -61,6 +61,3 @@ desktop.ini
 # Codex home for local-model runs (generated per machine from tools/templates/codex-local.config.toml)
 /.codex-local/
 
-# Private agent run history (prompts / results): hidden, user-only folder created by tools/setup.*,
-# synced only to the private history repo in team.config.json -- never to this repository
-/.history/

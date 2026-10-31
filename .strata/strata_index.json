@@ -1,16 +1,16 @@
 {
   "schema": "strata-index/builtin-1",
   "generator": "tools/strata-index.ps1",
-  "contentHash": "0a0b5f0d48ac413c",
+  "contentHash": "4eb9c9b0a396f6df",
   "files": [
-    {"path":"Assets/Scripts/Editor/BatchEntry.cs","layer":"L2","hash":"f6739480c993315f","assembly":"Game.Editor","namespace":"Game.Editor","types":["BatchEntry"]},
+    {"path":"Assets/Scripts/Editor/BatchEntry.cs","layer":"L2","hash":"6cb6453b1241be6f","assembly":"Game.Editor","namespace":"Game.Editor","types":["BatchEntry"]},
     {"path":"Assets/Scripts/Editor/Game.Editor.asmdef","layer":"L1","hash":"d94b8a35ea4b1bd6","assembly":"Game.Editor"},
     {"path":"Assets/Scripts/Runtime/Game.Runtime.asmdef","layer":"L1","hash":"c780428857f7a14a","assembly":"Game.Runtime"},
     {"path":"Assets/Scripts/Runtime/GameBootstrap.cs","layer":"L2","hash":"845621bfb8b6e8b2","assembly":"Game.Runtime","namespace":"Game","types":["GameBootstrap"]},
     {"path":"Assets/Scripts/Runtime/MathUtil.cs","layer":"L2","hash":"cdbc1c81d8372073","assembly":"Game.Runtime","namespace":"Game","types":["MathUtil"]},
     {"path":"Assets/Tests/EditMode/Game.Tests.EditMode.asmdef","layer":"L1","hash":"794eb92aadb0f0d2","assembly":"Game.Tests.EditMode"},
     {"path":"Assets/Tests/EditMode/MathUtilTests.cs","layer":"L2","hash":"cf201ad98c35428a","assembly":"Game.Tests.EditMode","namespace":"Game.Tests","types":["MathUtilTests"]},
-    {"path":"Assets/Tests/PlayMode/BootstrapPlayModeTests.cs","layer":"L2","hash":"543aa9e6f57929b3","assembly":"Game.Tests.PlayMode","namespace":"Game.Tests","types":["BootstrapPlayModeTests"]},
+    {"path":"Assets/Tests/PlayMode/BootstrapPlayModeTests.cs","layer":"L2","hash":"16e2824ae1ad1115","assembly":"Game.Tests.PlayMode","namespace":"Game.Tests","types":["BootstrapPlayModeTests"]},
     {"path":"Assets/Tests/PlayMode/Game.Tests.PlayMode.asmdef","layer":"L1","hash":"53c627713aa7588a","assembly":"Game.Tests.PlayMode"}
   ],
   "symbols": [

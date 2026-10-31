@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Team safety checks before every commit. Enabled by tools/setup.* (git config core.hooksPath .githooks).
+# Team safety checks before every commit. Enabled with: git config core.hooksPath .githooks
 # Bypass only in an emergency: git commit --no-verify  (CI runs the same checks on the PR anyway).
 set -uo pipefail
 root="$(git rev-parse --show-toplevel)"
@@ -9,9 +9,9 @@ fail=0
 # 1. Unity .meta consistency
 if ! bash tools/check-meta.sh; then fail=1; fi
 
-# 2. Never commit Unity's generated / per-machine folders, or the private run history
-bad="$(git diff --cached --name-only --diff-filter=A | grep -E '^(Library|Temp|Obj|UserSettings|Logs)/|^\.codex-local/|^\.history/|^History/' | grep -v '^Logs/.gitkeep$' || true)"
-if [ -n "$bad" ]; then echo "Generated, per-machine or private (run history) files staged:"; printf '  %s\n' $bad; fail=1; fi
+# 2. Never commit Unity's generated / per-machine folders
+bad="$(git diff --cached --name-only --diff-filter=A | grep -E '^(Library|Temp|Obj|UserSettings|Logs)/|^\.codex-local/' | grep -v '^Logs/.gitkeep$' || true)"
+if [ -n "$bad" ]; then echo "Generated or per-machine files staged:"; printf '  %s\n' $bad; fail=1; fi
 
 # 3. Big binaries must go through Git LFS (see .gitattributes)
 while IFS= read -r f; do
@@ -27,7 +27,10 @@ if git diff --cached --name-only | grep -qE '^Assets/.*\.(cs|asmdef)$'; then
   ps=""
   command -v pwsh >/dev/null 2>&1 && ps=pwsh
   [ -z "$ps" ] && command -v powershell >/dev/null 2>&1 && ps=powershell
-  if [ -n "$ps" ] && ! "$ps" -NoProfile -ExecutionPolicy Bypass -File tools/strata-index.ps1 -Verify >/dev/null; then
+  if [ -z "$ps" ]; then
+    # Not blocking (CI runs the same check), but say so instead of skipping silently
+    echo "warning: PowerShell (pwsh) not found; context index not verified. Install pwsh, run tools/strata-index.ps1, or CI will reject a stale index." >&2
+  elif ! "$ps" -NoProfile -ExecutionPolicy Bypass -File tools/strata-index.ps1 -Verify >/dev/null; then
     echo "Context index is stale: run tools/strata-index.cmd and stage .strata/strata_index.json"; fail=1
   fi
 fi

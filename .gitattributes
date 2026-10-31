@@ -24,7 +24,7 @@ Tasks/items/*.json text eol=lf
 
 # ===== Git LFS: binary assets =====
 # "lockable" source-art files are read-only until you run: git lfs lock <file>  (unlock: git lfs unlock <file>)
-# Binary files cannot be merged, so lock before editing them; tools/team.cmd status lists current locks.
+# Binary files cannot be merged, so lock before editing them; `git lfs locks` lists current locks.
 *.png  filter=lfs diff=lfs merge=lfs -text
 *.jpg  filter=lfs diff=lfs merge=lfs -text
 *.jpeg filter=lfs diff=lfs merge=lfs -text
