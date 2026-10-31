@@ -9,6 +9,11 @@ git --version
 git lfs version || { echo "git-lfs is not installed: https://git-lfs.com" >&2; exit 1; }
 git lfs install --local >/dev/null
 git lfs pull
+# Shared team hooks (meta check, attribution trailers, no direct push to main); they chain to LFS.
+git config --local core.hooksPath .githooks
+git config --local lfs.locksverify true
+echo "Team hooks enabled (.githooks)"
+git config user.name >/dev/null || echo "warning: git user.name is not set -- task claims and history need it" >&2
 
 echo "== Unity"
 tools/find-unity.sh --list

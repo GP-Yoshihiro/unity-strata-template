@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# 1. Refuse direct pushes to the default branch; work goes through task branches and PRs.
+#    Claim refs (refs/claims/*) and task branches are allowed. Override once: ALLOW_MAIN_PUSH=1 git push
+# 2. Hand over to Git LFS (core.hooksPath replaces .git/hooks, so LFS must be chained here).
+input="$(cat)"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      if [ "${ALLOW_MAIN_PUSH:-0}" != "1" ]; then
+        echo "pre-push: direct push to ${remote_ref#refs/heads/} is blocked. Push a task branch and open a PR (tools/task.cmd claim <id>)."
+        exit 1
+      fi ;;
+  esac
+done <<< "$input"
+command -v git-lfs >/dev/null 2>&1 || exit 0
+printf '%s\n' "$input" | git lfs pre-push "$@"

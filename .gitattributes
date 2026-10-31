@@ -8,6 +8,9 @@
 *.ps1     text eol=crlf
 *.cmd     text eol=crlf
 .strata/*.json text eol=lf
+.githooks/* text eol=lf
+Tasks/items/*.json text eol=lf
+History/** text eol=lf
 
 # Unity YAML (force text serialization in Editor settings) — merge with UnityYAMLMerge if configured
 *.unity    text merge=unityyamlmerge eol=lf
@@ -21,18 +24,20 @@
 *.meta     text eol=lf
 
 # ===== Git LFS: binary assets =====
+# "lockable" source-art files are read-only until you run: git lfs lock <file>  (unlock: git lfs unlock <file>)
+# Binary files cannot be merged, so lock before editing them; tools/team.cmd status lists current locks.
 *.png  filter=lfs diff=lfs merge=lfs -text
 *.jpg  filter=lfs diff=lfs merge=lfs -text
 *.jpeg filter=lfs diff=lfs merge=lfs -text
-*.psd  filter=lfs diff=lfs merge=lfs -text
+*.psd  filter=lfs diff=lfs merge=lfs -text lockable
 *.tga  filter=lfs diff=lfs merge=lfs -text
 *.tif  filter=lfs diff=lfs merge=lfs -text
 *.exr  filter=lfs diff=lfs merge=lfs -text
 *.hdr  filter=lfs diff=lfs merge=lfs -text
-*.fbx  filter=lfs diff=lfs merge=lfs -text
-*.FBX  filter=lfs diff=lfs merge=lfs -text
+*.fbx  filter=lfs diff=lfs merge=lfs -text lockable
+*.FBX  filter=lfs diff=lfs merge=lfs -text lockable
 *.obj  filter=lfs diff=lfs merge=lfs -text
-*.blend filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text lockable
 *.wav  filter=lfs diff=lfs merge=lfs -text
 *.mp3  filter=lfs diff=lfs merge=lfs -text
 *.ogg  filter=lfs diff=lfs merge=lfs -text

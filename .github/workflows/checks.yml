@@ -1,0 +1,43 @@
+name: checks
+
+# Repository-level safety checks that do not need a Unity licence.
+# (Unity tests run locally / on a self-hosted runner: tools/unity.* test All)
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  repo-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+
+      - name: Unity .meta consistency
+        run: bash tools/check-meta.sh
+
+      - name: Context index up to date
+        shell: pwsh
+        run: ./tools/strata-index.ps1 -Verify
+
+      - name: Task files are valid
+        shell: pwsh
+        run: |
+          $ok = $true
+          Get-ChildItem Tasks/items -Filter 'T-*.json' | ForEach-Object {
+            try {
+              $t = Get-Content $_.FullName -Raw | ConvertFrom-Json
+              if ($t.id + '.json' -ne $_.Name) { throw "id '$($t.id)' does not match file name" }
+              if ($t.status -notin 'todo','doing','review','done','blocked') { throw "bad status '$($t.status)'" }
+            } catch { Write-Host "::error file=$($_.FullName)::$_"; $ok = $false }
+          }
+          if (-not $ok) { exit 1 }
+
+      - name: Commits carry a Task trailer (PRs from task branches)
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'task/')
+        run: |
+          missing=$(git log --no-merges --format='%h %s%n%(trailers:key=Task,valueonly)' origin/${{ github.base_ref }}..HEAD | awk 'NF==0{next} /^[0-9a-f]{7,} /{h=$0; getline t; if (t !~ /^T-/) print h}')
+          if [ -n "$missing" ]; then echo "Commits without 'Task:' trailer:"; echo "$missing"; exit 1; fi

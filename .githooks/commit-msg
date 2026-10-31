@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Adds attribution trailers so every commit says which task and which agent run produced it:
+#   Task: <id>           from the branch name task/<id>-... (or AGENT_TASK)
+#   Agent: <name>        when committed inside tools/agent.* (AGENT_NAME)
+#   Agent-Run: <file>    the History/runs record holding the exact instructions (AGENT_RUN_FILE)
+msg="$1"
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+task="${AGENT_TASK:-}"
+if [ -z "$task" ]; then
+  task="$(printf '%s' "$branch" | sed -n 's#^task/\(T-[0-9]\{6\}-[0-9a-f]\{4\}\).*#\1#p')"
+fi
+add() { grep -q "^$1:" "$msg" || git interpret-trailers --in-place --if-exists doNothing --trailer "$1: $2" "$msg"; }
+[ -n "$task" ] && add "Task" "$task"
+[ -n "${AGENT_NAME:-}" ] && add "Agent" "$AGENT_NAME"
+[ -n "${AGENT_RUN_FILE:-}" ] && add "Agent-Run" "$(printf '%s' "$AGENT_RUN_FILE" | tr '\' '/')"
+exit 0

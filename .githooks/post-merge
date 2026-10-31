@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Chains Git LFS (core.hooksPath replaces .git/hooks).
+command -v git-lfs >/dev/null 2>&1 || exit 0
+git lfs post-merge "$@"

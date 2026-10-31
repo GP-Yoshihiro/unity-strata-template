@@ -1,0 +1,25 @@
+{
+  "id": "T-261031-0001",
+  "title": "Replace sample MathUtil with the first real gameplay module",
+  "status": "todo",
+  "priority": 2,
+  "paths": [
+    "Assets/Scripts/Runtime/MathUtil.cs",
+    "Assets/Tests/EditMode/MathUtilTests.cs"
+  ],
+  "strataRefs": [
+    "cs:Game.MathUtil",
+    "cs:Game.Tests.MathUtilTests"
+  ],
+  "acceptance": [
+    "tools\unity.cmd test EditMode exits 0",
+    "tools\strata-index.cmd -Verify exits 0"
+  ],
+  "createdBy": "template",
+  "createdAt": "2026-10-31T00:00:00+09:00",
+  "assignee": null,
+  "agent": null,
+  "branch": null,
+  "completedAt": null,
+  "notes": "Template placeholder task. Delete or rewrite when the project starts."
+}

@@ -1,0 +1,29 @@
+# Template for .codex-local/config.toml (CODEX_HOME for local-model runs).
+# tools/codex-local.ps1 copies it and appends a trust entry for this checkout's absolute path.
+# Kept separate from ~/.codex so desktop-app plugins, MCP servers and their tool definitions
+# do not fill the local model's context window. Values come from `strata connect codex`;
+# update model / window when .strata/launch.json changes.
+
+model = "qwen3.8-flash-next-coder-iq1_m"
+model_provider = "strata"
+model_context_window = 65536
+model_auto_compact_token_limit = 32142
+model_reasoning_summary = "auto"
+# Unattended 24h loops: no approval prompts; writes stay inside the workspace sandbox.
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+check_for_update_on_startup = false
+
+[model_providers.strata]
+name = "Strata (local)"
+base_url = "http://127.0.0.1:8080/v1"
+wire_api = "responses"
+env_key = "STRATA_API_KEY"
+stream_idle_timeout_ms = 600000
+
+[sandbox_workspace_write]
+network_access = true
+
+[windows]
+# Same Windows sandbox mode the Codex app sets up in ~/.codex (needed for shell commands on Windows).
+sandbox = "elevated"

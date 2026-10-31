@@ -1,4 +1,0 @@
-{
-  "$schema_note": "Moved here from backlog.json when acceptance passes. Add: completedAt (ISO 8601), commit (short SHA), agent (claude|codex|human).",
-  "tasks": []
-}

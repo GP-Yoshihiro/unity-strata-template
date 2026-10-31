@@ -57,3 +57,6 @@ desktop.ini
 # Strata runtime data is per-machine; config + index are shared.
 /.strata/cache/
 /.strata/stats.json
+
+# Codex home for local-model runs (generated per machine from tools/templates/codex-local.config.toml)
+/.codex-local/

@@ -17,6 +17,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'git-lfs is not installed: https://git-lfs.com' }
     git lfs install --local | Out-Null
     git lfs pull
+    # Shared team hooks (meta check, attribution trailers, no direct push to main); they chain to LFS.
+    git config --local core.hooksPath .githooks
+    git config --local lfs.locksverify true
+    Write-Host 'Team hooks enabled (.githooks)'
+    if (-not (git config user.name)) { Write-Warning 'git user.name is not set -- task claims and history need it: git config --global user.name "<name>"' }
 
     Write-Host '== Unity'
     & (Join-Path $PSScriptRoot 'find-unity.ps1') -List
