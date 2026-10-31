@@ -18,6 +18,8 @@ Several humans and AI agents may work here at the same time. Never start editing
 
 ## While working
 - Scenes / prefabs only if listed in `paths`. Binary art (psd/fbx/blend): `git lfs lock <file>` first.
+- End every commit message with a `Task: <id>` line (the loop does this itself), so `git log --grep "Task: <id>"`
+  finds the task's commits.
 - Pre-commit blocks missing/orphan `.meta`, files over 5 MB outside LFS and a stale context index: fix, never
   `--no-verify`.
 

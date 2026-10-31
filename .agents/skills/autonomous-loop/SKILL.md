@@ -17,7 +17,7 @@ is on `main`, so nothing it proposes takes effect before a human merges it.
 ## Prepare (once per loop machine)
 1. A dedicated clone nobody opens in the Editor, at a short path:
    `git clone <repo> C:\dev\<name>-agent`, then `git config core.hooksPath .githooks` and
-   `git lfs install --local --skip-repo` in it.
+   `git lfs install --local --skip-repo` and `git lfs pull` in it.
 2. `tools\unity.cmd test EditMode` exits 0 there (licence active, project compiles).
 3. `gh auth status` OK (the loop opens PRs). The agent CLI is logged in; for `codex-local` / `claude-local`,
    `tools\strata.cmd health` shows the model (the loop runs `up` itself when Strata is down).

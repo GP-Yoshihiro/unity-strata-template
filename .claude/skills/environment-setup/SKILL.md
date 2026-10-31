@@ -27,8 +27,7 @@ git add -A; git commit -q -m "Import unity-strata-template"
 git config core.hooksPath .githooks; git config lfs.locksverify true
 ```
 If the folder is already a clone of the template, skip `init` and run `git remote rename origin template` instead.
-Personalise: replace any `GP-Yoshihiro/unity-strata-template` reference with `<owner>/<name>`; set `productName:` in
-`ProjectSettings/ProjectSettings.asset` to the name. Commit, then
+Personalise: set `productName:` in `ProjectSettings/ProjectSettings.asset` to the name. Commit, then
 `gh repo create <owner>/<name> --private --source . --remote origin` and push `main` as above.
 
 ## 2. Unity version
@@ -58,7 +57,8 @@ Personalise: replace any `GP-Yoshihiro/unity-strata-template` reference with `<o
 - Show `.strata/models.json` as a table **sorted by `rank` (smartest first)**: name, GPU load (`tier`: 超高/高/中/低,
   meanings in `tiers`), `memGB` (VRAM+RAM), `downloadGB`, fit on this PC (o = RAM+VRAM ≥ memGB×1.15, enough disk,
   vendor in `vendors`; ~ = ≥ memGB; x = otherwise) and `note` (`codexOk: false` = 8K context, not for Codex).
-  Recommend the highest-ranked "o" model. **Ask** which one.
+  Recommend the highest-ranked "o" model. **Ask** which one. If no model is "o" or "~", say so and recommend
+  skipping Strata (cloud agents only; the loop agent becomes `claude` or `codex`).
 - Write `.strata/launch.json`: `family`, `model`, `vision: "off"`, `port: 8080`, `contextTokens`, `launchArgs`
   (models.json's, plus `--context`, `64k` as a first try). Check with `tools\strata.cmd plan`; if refused retry with
   the lower-case model id, then without `--context`.
@@ -85,7 +85,8 @@ Personalise: replace any `GP-Yoshihiro/unity-strata-template` reference with `<o
 ## 6. Skills, plugins, spec-kit
 - Skills: Codex reads `.agents/skills`; copy them for Claude Code: `Copy-Item .agents\skills\* .claude\skills -Recurse -Force`.
 - Claude Code plugins (**Ask**): `claude plugin install <name> --scope project` (shared via `.claude/settings.json`).
-  If a name is not found, tell the user to search with `/plugin` in Claude Code.
+  Defaults: `github`, `unity`, `unity-perf` (checked to exist). `unity` adds ~6k tokens to every session -- skip it
+  for `claude-local` (local model, small context). If a name is not found, tell the user to search with `/plugin`.
 - spec-kit (**Ask**): `winget install --id astral-sh.uv -e` → `uv tool install specify-cli` →
   `specify init --here --integration claude` (or `codex`; read `specify init --help` for the exact flags, add
   `--script ps --force`). Replace `.specify/memory/constitution.md` with `constitution.ja.md` from this folder
