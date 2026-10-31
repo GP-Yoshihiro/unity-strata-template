@@ -2,7 +2,7 @@
 # Dot-source it:  . (Join-Path $PSScriptRoot 'lib/team.ps1')
 # Windows PowerShell 5.1 compatible.
 
-$script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+$script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # tools/lib -> repo root
 $script:Utf8 = New-Object Text.UTF8Encoding $false
 
 function Invoke-Git {
