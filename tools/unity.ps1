@@ -58,10 +58,8 @@ function Show-TestSummary([string]$xml) {
 
 switch ($Command) {
     'test' {
-        $platforms = switch (if ($Rest) { $Rest[0] } else { 'EditMode' }) {
-            'All' { @('EditMode', 'PlayMode') }
-            default { @($_) }
-        }
+        $requested = if ($Rest) { $Rest[0] } else { 'EditMode' }
+        $platforms = if ($requested -eq 'All') { @('EditMode', 'PlayMode') } else { @($requested) }
         $worst = 0
         foreach ($pl in $platforms) {
             $xml = Join-Path $LogDir ("{0}-results.xml" -f $pl.ToLower())

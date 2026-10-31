@@ -7,6 +7,7 @@
 *.sh      text eol=lf
 *.ps1     text eol=crlf
 *.cmd     text eol=crlf
+.strata/*.json text eol=lf
 
 # Unity YAML (force text serialization in Editor settings) — merge with UnityYAMLMerge if configured
 *.unity    text merge=unityyamlmerge eol=lf
