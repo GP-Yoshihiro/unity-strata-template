@@ -18,17 +18,17 @@
 
   Getting better over time:
     - every task appends one metrics line (rounds, pass/fail, compiler error codes, scope violations,
-      duration) to the private history repo: .history/metrics/loop-YYYY-MM.jsonl
+      duration) to Logs/loop-metrics.jsonl in this clone
     - Docs/agent-lessons.md (L1 context, first part of every prompt) holds the project's known pitfalls
     - the improvement pass (-ImproveEveryHours, default 24; 0 = off) gives the agent those metrics plus
       Prompts/PROMPT_DAILY_IMPROVEMENT.md and opens a DRAFT PR with the report, new lessons, prompt fixes and
       task splits. Nothing it proposes is used by the loop until a human merges it.
 
   Run it in a dedicated clone that no one has open in the Unity Editor, at a short path, e.g.
-    git clone <repo> C:\dev\<name>-agent ;  cd C:\dev\<name>-agent ;  tools\setup.cmd ;  tools\loop.cmd
+    git clone <repo> C:\dev\<name>-agent ;  cd C:\dev\<name>-agent ;  git config core.hooksPath .githooks ;  tools\loop.cmd
 
   Stop it gracefully: create Logs\loop.stop (tools\loop.cmd -Stop). It finishes the current task first.
-  Log: Logs\loop.log. Every agent run is recorded in the private history (tools\team.cmd history).
+  Log: Logs\loop.log (what the loop did) and the agent output on screen.
 
 .EXAMPLE
   tools\loop.cmd                         # run until stopped
@@ -86,14 +86,9 @@ function Invoke-Tool([string]$Name, [scriptblock]$Block) {
 
 function Get-ToolPath([string]$Script) { Join-Path $Tools $Script }
 
-function Get-LatestRunRecord([string]$TaskId) {
-    Get-ChildItem -Path (Join-Path (Get-HistoryRoot) 'runs') -Recurse -Filter "*-$Agent-$TaskId.md" -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-}
-
 function Invoke-AgentWithTimeout([string]$PromptText, [string]$TaskId) {
     # The agent runs as a child process so a model that goes in circles cannot stall the loop forever:
-    # after -AgentTimeoutMinutes its whole process tree is killed and its run record is closed as a timeout.
+    # after -AgentTimeoutMinutes its whole process tree is killed.
     $pf = Join-Path ([IO.Path]::GetTempPath()) ("loop-prompt-" + [Guid]::NewGuid().ToString('N') + '.txt')
     [IO.File]::WriteAllText($pf, $PromptText, $script:Utf8)
     $shell = (Get-Process -Id $PID).Path
@@ -104,12 +99,6 @@ function Invoke-AgentWithTimeout([string]$PromptText, [string]$TaskId) {
         if ($p.WaitForExit($AgentTimeoutMinutes * 60 * 1000)) { return $p.ExitCode }
         Write-Log "  agent exceeded $AgentTimeoutMinutes min; stopping it"
         Stop-ProcessTree $p
-        $rec = Get-LatestRunRecord $TaskId
-        if ($rec -and (Select-String -LiteralPath $rec.FullName -Pattern '^finished:\s*$' -Quiet)) {
-            Add-RunSection $rec.FullName 'Timeout' "Stopped by tools/loop.ps1 after $AgentTimeoutMinutes minutes."
-            Complete-RunRecord $rec.FullName 124
-            Publish-History "timeout $($rec.BaseName)"
-        }
         return 124
     } finally { Remove-Item -LiteralPath $pf -ErrorAction SilentlyContinue }
 }
@@ -203,25 +192,21 @@ Rules for this run:
 "@
 }
 
-# ---------- metrics (private history repo) ----------
+# ---------- metrics (Logs/loop-metrics.jsonl, one JSON line per task) ----------
 
-function Get-MetricsDir { Join-Path (Get-HistoryRoot) 'metrics' }
+$MetricsFile = Join-Path $LogDir 'loop-metrics.jsonl'
 
 function Add-LoopMetric([hashtable]$Data) {
     $Data['time'] = (Get-Date).ToString('o'); $Data['user'] = (Get-GitUser).Name; $Data['agent'] = $Agent
     $Data['machine'] = [Environment]::MachineName
-    $dir = Get-MetricsDir
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    $file = Join-Path $dir ("loop-{0}.jsonl" -f (Get-Date).ToString('yyyy-MM'))
-    [IO.File]::AppendAllText($file, (($Data | ConvertTo-Json -Compress -Depth 4) + "`n"), $script:Utf8)
-    Publish-History "metrics $($Data['task'])"
+    [IO.File]::AppendAllText($MetricsFile, (($Data | ConvertTo-Json -Compress -Depth 4) + "`n"), $script:Utf8)
 }
 
 function Get-MetricsSummary([int]$Days = 7) {
     $since = (Get-Date).AddDays(-$Days)
-    $rows = @(Get-ChildItem -Path (Get-MetricsDir) -Filter 'loop-*.jsonl' -ErrorAction SilentlyContinue | ForEach-Object {
-            Get-Content -LiteralPath $_.FullName -Encoding UTF8 | Where-Object { $_ } | ForEach-Object { try { $_ | ConvertFrom-Json } catch { } }
-        } | Where-Object { $_.time -and ([datetime]$_.time) -ge $since -and $_.kind -eq 'task' })
+    if (-not (Test-Path -LiteralPath $MetricsFile)) { return "No loop metrics yet." }
+    $rows = @(Get-Content -LiteralPath $MetricsFile -Encoding UTF8 | Where-Object { $_ } | ForEach-Object { try { $_ | ConvertFrom-Json } catch { } } |
+        Where-Object { $_.time -and ([datetime]$_.time) -ge $since -and $_.kind -eq 'task' })
     if (-not $rows) { return "No loop metrics in the last $Days days." }
     $passed = @($rows | Where-Object { $_.passed }).Count
     $codes = $rows | ForEach-Object { $_.csErrors } | Where-Object { $_ } | Group-Object | Sort-Object Count -Descending | Select-Object -First 10 |
@@ -257,18 +242,14 @@ function Reset-WorkingTree([string]$TaskId) {
 }
 
 function Submit-Work($task, [bool]$passed, [string]$runAgent, [switch]$AlwaysDraft, [string]$Extra) {
-    # Commit (trailers Task / Agent / Run-Record come from the commit-msg hook), mark done/blocked, push, PR.
-    # Returns whether the work counts as finished (it does not when nothing was committed).
-    $env:AGENT_NAME = $runAgent; $env:AGENT_TASK = $task.id
-    $rec = Get-LatestRunRecord $task.id   # the agent ran as a child process: point the trailer at its record
-    if ($rec) { $env:AGENT_RUN_REF = "runs/$($rec.Directory.Name)/$($rec.Name)" }
+    # Commit, mark done/blocked, push, PR. Returns whether the work counts as finished (not when nothing was committed).
     $note = "loop: unfinished after $($MaxFixRounds + 1) round(s) -- tests failing or agent error; see the draft PR"
     if (-not (Get-ChangedFiles)) {
         $passed = $false; $note = 'loop: the agent made no changes'; Write-Log "  $note"
     } else {
         $null = Invoke-Git add -A
         $status = if ($passed) { 'implement' } else { 'WIP, tests failing' }
-        $commit = Invoke-Git commit -q -m "task($($task.id)): $status -- $($task.title)" -AllowFail
+        $commit = Invoke-Git commit -q -m "task($($task.id)): $status -- $($task.title)" -m "Task: $($task.id)" -m "Agent: $runAgent" -AllowFail
         if ($LASTEXITCODE -ne 0) {
             # e.g. the pre-commit hook refused (.meta, big file, stale index): the work is NOT on the branch
             Write-Log "  commit failed: $($commit -join ' ')"
@@ -284,10 +265,8 @@ function Submit-Work($task, [bool]$passed, [string]$runAgent, [switch]$AlwaysDra
     $push = Invoke-Git push -q -u origin $branch -AllowFail
     if ($LASTEXITCODE -ne 0) { Write-Log "  push failed: $($push -join ' ')" }
     elseif (-not $NoPR -and ($gh = Find-Gh)) {
-        $runs = (Get-ChildItem -Path (Join-Path (Get-HistoryRoot) 'runs') -Recurse -Filter "*-$($task.id).md" -ErrorAction SilentlyContinue |
-            ForEach-Object { "- history:runs/$($_.Directory.Name)/$($_.Name)" }) -join "`n"
         $result = if ($AlwaysDraft) { "Result: $(if ($passed) { 'agent finished' } else { "unfinished -- $note" })" } else { "Unity $TestPlatform tests: $(if ($passed) { 'passed' } else { "FAILING -- needs a human ($note)" })" }
-        $body = "Task: $($task.id)`n`nAutomated by tools/loop.ps1 ($runAgent) for $((Get-GitUser).Name).`n$result`n$Extra`n`nAgent runs (private history repo):`n$runs`n"
+        $body = "Task: $($task.id)`n`nAutomated by tools/loop.ps1 ($runAgent) for $((Get-GitUser).Name).`n$result`n$Extra`n"
         $bodyFile = Join-Path ([IO.Path]::GetTempPath()) ("pr-" + $task.id + '.md')
         [IO.File]::WriteAllText($bodyFile, $body, $script:Utf8)
         $prArgs = @('pr', 'create', '--base', $default, '--head', $branch, '--title', "$($task.id): $($task.title)", '--body-file', $bodyFile)
@@ -298,7 +277,6 @@ function Submit-Work($task, [bool]$passed, [string]$runAgent, [switch]$AlwaysDra
         Remove-Item -LiteralPath $bodyFile -ErrorAction SilentlyContinue
         Write-Log "  PR: $prUrl"
     }
-    Remove-Item Env:AGENT_NAME, Env:AGENT_TASK, Env:AGENT_RUN_FILE, Env:AGENT_RUN_REF -ErrorAction SilentlyContinue
     return $passed
 }
 
@@ -340,7 +318,7 @@ Task $($id): $title -- self-improvement pass of the unattended loop.
 Files/folders you may change: $($ImprovePaths -join ', ')  (everything else is reverted by the runner)
 
 Follow the instructions below, with these adjustments for this sandboxed run:
-- You cannot run Unity, git, tools\task.cmd, tools\team.cmd or read .history/. The runner already collected the
+- You cannot run Unity, git or tools\task.cmd. The runner already collected the
   data you need (below). Create new tasks by writing Tasks/items/T-<yyMMdd>-<4 hex>.json files as described in
   Tasks/README.md (status "todo", precise "paths", "strataRefs", "acceptance").
 - Write the report to Reports/daily_report_$((Get-Date).ToString('yyyyMMdd')).md.

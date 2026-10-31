@@ -1,5 +1,5 @@
 {
-  "description": "Strata models offered by tools/bootstrap.ps1. Source: https://github.com/Niko1221/Strata/blob/main/docs/MODELS.md (2026-10). rank = estimated capability for coding/agent work in this project (1 = smartest); memGB = RAM+VRAM the model needs; downloadGB = first download; tier = GPU/memory load (see tiers). Ids are checked with `strata launch --plan` before anything is downloaded. Edit freely when Strata adds models.",
+  "description": "Strata models the environment-setup skill offers (ranked list for the user). Source: https://github.com/Niko1221/Strata/blob/main/docs/MODELS.md (2026-10). rank = estimated capability for coding/agent work in this project (1 = smartest); memGB = RAM+VRAM the model needs; downloadGB = first download; tier = GPU/memory load (see tiers). Ids are checked with `strata launch --plan` before anything is downloaded. Edit freely when Strata adds models.",
   "tiers": {
     "超高": "VRAM+RAM 100GB 以上、または SSD から読みながら動く（ワークステーション級）",
     "高": "VRAM+RAM 64〜100GB（RAM 96〜128GB クラス）",

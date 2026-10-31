@@ -49,8 +49,6 @@ desktop.ini
 .unity-path.local
 .env.local
 .claude/settings.local.json
-# Answers and progress of tools/bootstrap.ps1 on this machine
-.bootstrap.local.json
 
 # ===== Automation outputs =====
 # Logs/ is kept (via .gitkeep) but its contents are per-run artifacts.
@@ -63,6 +61,3 @@ desktop.ini
 # Codex home for local-model runs (generated per machine from tools/templates/codex-local.config.toml)
 /.codex-local/
 
-# Private agent run history (prompts / results): hidden, user-only folder created by tools/setup.*,
-# synced only to the private history repo in team.config.json -- never to this repository
-/.history/

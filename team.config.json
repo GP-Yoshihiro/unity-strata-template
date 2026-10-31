@@ -1,7 +1,5 @@
 {
-  "description": "Team settings shared by tools/task.*, tools/agent.*, tools/team.*, tools/loop.*, tools/try.* and tools/bootstrap.ps1. mainAgent = the lead AI (claude | codex); loopAgent = default agent of tools/loop (codex-local | claude-local | codex | claude)",
-  "historyRepo": "https://github.com/GP-Yoshihiro/unity-strata-history.git",
-  "historyDir": ".history",
+  "description": "Team settings for tools/task.*, tools/agent.* and tools/loop.*. mainAgent = the lead AI (claude | codex); loopAgent = default agent of tools/loop (codex-local | claude-local | codex | claude)",
   "defaultBranch": "main",
   "staleClaimHours": 24,
   "mainAgent": "claude",

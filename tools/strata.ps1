@@ -88,13 +88,6 @@ function Invoke-StrataAsk([string[]]$AskArgs, [string[]]$PipedLines) {
     $json = [Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray()) | ConvertFrom-Json
     $answer = $json.choices[0].message.content
 
-    # Recorded under the calling agent run (tools\agent.cmd sets AGENT_RUN_FILE), so delegated work shows in the run history.
-    if ($env:AGENT_RUN_FILE -and $env:AGENT_NAME -ne 'strata') {
-        . (Join-Path $PSScriptRoot 'lib/team.ps1')
-        $label = (($words -join ' ') -split "`r?`n")[0]
-        if ($label.Length -gt 80) { $label = $label.Substring(0, 80) + '...' }
-        Add-RunSection $env:AGENT_RUN_FILE "Delegated to Strata ($model): $label" $answer 2000
-    }
     return $answer
 }
 
@@ -113,7 +106,7 @@ $Strata = Find-Strata
 if (-not $Strata) { throw "Strata Terminal not found. Install it (official installer):`n  $installHelp`nor set STRATA_EXE to strata(.cmd)." }
 
 # Only --family / --model / --vision are documented for `strata launch`; anything else comes from "launchArgs"
-# (written by tools/bootstrap.ps1). Older launch.json files without launchArgs keep the previous flags.
+# (written by the environment-setup skill). Older launch.json files without launchArgs keep the previous flags.
 $modelArgs = @('--family', $Launch.family, '--model', $Launch.model)
 if ($Launch.vision) { $modelArgs += @('--vision', $Launch.vision) }
 if ($Launch.PSObject.Properties['launchArgs']) { $modelArgs += @($Launch.launchArgs | Where-Object { $_ }) }

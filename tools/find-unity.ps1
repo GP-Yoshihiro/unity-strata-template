@@ -32,7 +32,6 @@ param(
     [string]$Version,
     [switch]$Strict,
     [switch]$List,
-    [switch]$ListObjects,
     [switch]$Hub
 )
 
@@ -165,7 +164,6 @@ function Find-UnityHub {
 }
 
 if ($Hub) { Write-Output (Find-UnityHub); return }
-if ($ListObjects) { Get-InstalledEditors; return }   # objects: Version, Path, Key (newest first)
 
 if ($List) {
     Write-Host "Project version: $(Get-ProjectVersion)"

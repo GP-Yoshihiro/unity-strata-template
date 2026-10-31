@@ -36,13 +36,7 @@ jobs:
           }
           if (-not $ok) { exit 1 }
 
-      - name: Commits carry a Task trailer (PRs from task branches)
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'task/')
-        run: |
-          missing=$(git log --no-merges --format='%h %s%n%(trailers:key=Task,valueonly)' origin/${{ github.base_ref }}..HEAD | awk 'NF==0{next} /^[0-9a-f]{7,} /{h=$0; getline t; if (t !~ /^T-/) print h}')
-          if [ -n "$missing" ]; then echo "Commits without 'Task:' trailer:"; echo "$missing"; exit 1; fi
-
-      - name: Shell scripts are executable and parse; cmd wrappers are cmd syntax
+      - name: Hook scripts are executable and parse; cmd wrappers are cmd syntax
         run: |
           bad=0
           for f in $(git ls-files 'tools/*.sh' '.githooks/*'); do

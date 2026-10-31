@@ -212,10 +212,6 @@ switch ($Command) {
         $t | Select-Object * -ExcludeProperty _path | Format-List | Out-String -Width 200 | Write-Host
         $c = Get-RemoteClaims | Where-Object { $_.Task -eq $Arg }
         if ($c) { Write-Host "Claim: $($c.User) ($($c.Agent)) since $($c.Since) on $($c.Branch); paths: $($c.Paths -join ', ')" }
-        Write-Host "`nAgent runs:"
-        $historyRoot = Sync-History
-        Get-ChildItem -Path (Join-Path $historyRoot 'runs') -Recurse -Filter "*-$Arg.md" -ErrorAction SilentlyContinue |
-            ForEach-Object { '  history:' + $_.FullName.Substring($historyRoot.Length + 1).Replace('\', '/') } | Write-Host
         Write-Host "`nCommits:"
         Invoke-Git log --all --format='  %h %ad %an  %s' --date=short "--grep=Task: $Arg" -AllowFail | Write-Host
     }

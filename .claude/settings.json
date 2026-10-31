@@ -4,7 +4,6 @@
     "allow": [
       "Bash(tools/task.cmd list:*)",
       "Bash(tools/task.cmd show:*)",
-      "Bash(tools/team.cmd status:*)",
       "Bash(tools/strata.cmd health:*)",
       "Bash(tools/strata.cmd ask:*)",
       "Bash(tools/strata-index.cmd:*)",
@@ -17,8 +16,6 @@
       "Bash(git log:*)"
     ],
     "deny": [
-      "Read(./.history/**)",
-      "Edit(./.history/**)",
       "Edit(**/*.meta)",
       "Edit(./Library/**)",
       "Edit(./Temp/**)",

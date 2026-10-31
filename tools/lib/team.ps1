@@ -1,4 +1,4 @@
-# Shared helpers for tools/task.ps1, tools/agent.ps1, tools/team.ps1 and tools/strata.ps1.
+# Shared helpers for tools/task.ps1, tools/agent.ps1, tools/loop.ps1 and tools/codex-local.ps1.
 # Dot-source it:  . (Join-Path $PSScriptRoot 'lib/team.ps1')
 # Windows PowerShell 5.1 compatible.
 
@@ -15,17 +15,6 @@ function Invoke-Git {
     $ErrorActionPreference = $prev
     if ($LASTEXITCODE -ne 0 -and -not $AllowFail) { throw "git $($GitArgs -join ' ') failed:`n$($out | Out-String)" }
     return $out | ForEach-Object { "$_" }
-}
-
-function Test-SamePath([string]$A, [string]$B) {
-    # Compares two directory paths on every OS. GetFullPath normalises '/' to '\' on Windows; on macOS/Linux
-    # a backslash is an ordinary file-name character, so never rewrite '/' to '\' before calling it.
-    if (-not $A -or -not $B) { return $false }
-    $na = [IO.Path]::GetFullPath($A).TrimEnd('\', '/')
-    $nb = [IO.Path]::GetFullPath($B).TrimEnd('\', '/')
-    $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
-    if ($onWindows) { return $na -ieq $nb }
-    return $na -ceq $nb
 }
 
 function Stop-ProcessTree($Process) {
@@ -90,157 +79,13 @@ function ConvertTo-PrettyJson($obj) {
 # ---------- Team config (team.config.json) ----------
 
 function Get-TeamConfig {
-    $cfg = [pscustomobject]@{ historyRepo = ''; historyDir = '.history'; defaultBranch = 'main'; staleClaimHours = 24; mainAgent = 'claude'; loopAgent = 'codex-local' }
+    $cfg = [pscustomobject]@{ defaultBranch = 'main'; staleClaimHours = 24; mainAgent = 'claude'; loopAgent = 'codex-local' }
     $path = Join-Path $script:RepoRoot 'team.config.json'
     if (Test-Path -LiteralPath $path) {
         $file = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($p in $file.PSObject.Properties) { $cfg | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value -Force }
     }
     return $cfg
-}
-
-# ---------- Agent run history (private history repo) ----------
-# Prompts and results can contain things the public template repo must not publish, so run records live
-# in a separate private repository (team.config.json: historyRepo), cloned to <main checkout>/.history.
-# One Markdown file per run, so concurrent runs by different people never touch the same file.
-
-function Invoke-GitIn([string]$Dir) {
-    $gitArgs = @($args)
-    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $out = & git -C $Dir @gitArgs 2>&1
-    $ErrorActionPreference = $prev
-    return $out | ForEach-Object { "$_" }
-}
-
-function Get-HistoryRoot {
-    # Shared by all worktrees: resolved against the main checkout (parent of the common .git dir)
-    $common = Invoke-Git rev-parse --path-format=absolute --git-common-dir -AllowFail | Select-Object -First 1
-    $mainRoot = if ($common -and (Test-Path -LiteralPath $common)) { Split-Path -Parent $common } else { $script:RepoRoot }
-    return Join-Path $mainRoot (Get-TeamConfig).historyDir
-}
-
-function Protect-PrivateFolder([string]$Dir) {
-    # Hidden folder, never part of the project's git (.gitignore + pre-commit), synced only to the private repo.
-    # Windows: keeps your normal (inherited) permissions -- tools you start, including sandboxed app terminals,
-    # still need them -- and adds a deny rule for Codex's sandbox group so autonomous agents can neither read
-    # past prompts nor rewrite the record. (Removing inheritance instead locks out restricted app tokens.)
-    $item = Get-Item -LiteralPath $Dir -Force
-    $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows
-    if (-not $onWindows) { & chmod 700 $Dir; return }
-    if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
-        $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
-    }
-    $group = "$env:COMPUTERNAME\CodexSandboxUsers"
-    try { $null = ([Security.Principal.NTAccount]$group).Translate([Security.Principal.SecurityIdentifier]) } catch { return }  # no Codex sandbox on this PC
-    $acl = Get-Acl -LiteralPath $Dir
-    $denied = $acl.Access | Where-Object { $_.AccessControlType -eq 'Deny' -and $_.IdentityReference.Value -like '*CodexSandboxUsers' }
-    if (-not $denied) {
-        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        & icacls.exe $Dir /deny "$($group):(OI)(CI)F" /Q 2>&1 | Out-Null
-        $ErrorActionPreference = $prev
-        if ($LASTEXITCODE -ne 0) { Write-Warning "Could not add the agent-sandbox deny rule on $Dir (icacls exit $LASTEXITCODE)." }
-    }
-}
-
-function Test-HistoryRepo([string]$Dir) {
-    # True only when $Dir is the top of its own git repository. Without this check, a history folder git cannot
-    # read would make `git -C <dir>` fall through to the project repo and commit there.
-    if (-not (Test-Path -LiteralPath (Join-Path $Dir '.git'))) { return $false }
-    $top = Invoke-GitIn $Dir rev-parse --show-toplevel | Select-Object -First 1
-    if ($LASTEXITCODE -ne 0 -or -not $top) { return $false }
-    return (Test-SamePath $top $Dir)
-}
-
-function Sync-History {
-    # Create the hidden private history folder; clone/update the private history repo into it when
-    # team.config.json names one you can access, otherwise keep records local only.
-    $cfg = Get-TeamConfig
-    $dir = Get-HistoryRoot
-    $isRepo = Test-HistoryRepo $dir
-    if ($cfg.historyRepo -and -not $isRepo -and (Test-Path -LiteralPath (Join-Path $dir '.git'))) {
-        Write-Warning "$dir\.git exists but git cannot use it (permissions?). History stays local until fixed: icacls `"$dir`" /reset /T"
-    } elseif ($cfg.historyRepo -and -not $isRepo -and -not (Test-Path -LiteralPath (Join-Path $dir 'runs'))) {
-        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Force -Recurse }   # empty placeholder from an earlier offline run
-        & git clone -q $cfg.historyRepo $dir 2>&1 | Out-Null
-        $ErrorActionPreference = $prev
-        if ($LASTEXITCODE -ne 0) { Write-Warning "History repo $($cfg.historyRepo) is not reachable (no access or offline). Run records stay local in $dir." }
-    } elseif ($isRepo) {
-        $null = Invoke-GitIn $dir pull -q --rebase --autostash
-    }
-    New-Item -ItemType Directory -Force -Path (Join-Path $dir 'runs') | Out-Null
-    Protect-PrivateFolder $dir
-    return $dir
-}
-
-function Publish-History([string]$Message) {
-    # Commit and push new/changed records; retries on concurrent pushes (each run is its own file, so rebase never conflicts).
-    $cfg = Get-TeamConfig
-    $dir = Get-HistoryRoot
-    if (-not $cfg.historyRepo -or -not (Test-HistoryRepo $dir)) { return }
-    $null = Invoke-GitIn $dir add -A
-    $null = Invoke-GitIn $dir -c "user.name=$((Get-GitUser).Name)" -c "user.email=$((Get-GitUser).Email)" commit -q -m $Message
-    for ($i = 0; $i -lt 3; $i++) {
-        $null = Invoke-GitIn $dir push -q
-        if ($LASTEXITCODE -eq 0) { return }
-        $null = Invoke-GitIn $dir pull -q --rebase
-    }
-    Write-Warning "Could not push run history to $($cfg.historyRepo); it will go up with the next run."
-}
-
-function New-RunRecord {
-    # Returns @{ Path = absolute file; Ref = 'runs/yyyy-MM/<id>.md' inside the history repo }
-    param([string]$Agent, [string]$Model, [string]$TaskId, [string]$Prompt)
-    $user = Get-GitUser
-    $now = Get-Date
-    $branch = Get-CurrentBranch
-    if (-not $TaskId) { $TaskId = Get-TaskIdFromBranch $branch }
-    $id = '{0}-{1}-{2}' -f $now.ToString('yyyyMMdd-HHmmss'), $user.Slug, $Agent
-    if ($TaskId) { $id += "-$TaskId" }
-    $rel = 'runs/{0}/{1}.md' -f $now.ToString('yyyy-MM'), $id
-    $root = Sync-History
-    $base = (Invoke-Git rev-parse --short HEAD -AllowFail | Select-Object -First 1)
-    $text = @"
----
-run: $id
-user: $($user.Name)
-agent: $Agent
-model: $Model
-task: $TaskId
-branch: $branch
-base_commit: $base
-started: $($now.ToString('o'))
-finished:
-exit_code:
----
-
-## Prompt
-
-``````text
-$Prompt
-``````
-
-"@
-    $path = Join-Path $root $rel
-    Write-TextFile $path ($text.TrimEnd() + "`n`n")
-    return [pscustomobject]@{ Path = $path; Ref = $rel; Id = $id }
-}
-
-function Add-RunSection([string]$Path, [string]$Title, [string]$Body, [int]$MaxChars = 4000) {
-    # Silently skipped when the record is not writable (e.g. called from inside an agent sandbox)
-    try { if (-not $Path -or -not (Test-Path -LiteralPath $Path -ErrorAction Stop)) { return } } catch { return }
-    if ($Body.Length -gt $MaxChars) { $Body = $Body.Substring(0, $MaxChars) + "`n... (truncated, $($Body.Length) chars)" }
-    $add = "## $Title`n`n``````text`n$Body`n```````n`n"
-    try { [IO.File]::AppendAllText($Path, $add, $script:Utf8) } catch { }
-}
-
-function Complete-RunRecord([string]$Path, [int]$ExitCode) {
-    $text = [IO.File]::ReadAllText($Path, $script:Utf8)
-    $text = $text -replace '(?m)^finished:.*$', "finished: $((Get-Date).ToString('o'))"
-    $text = $text -replace '(?m)^exit_code:.*$', "exit_code: $ExitCode"
-    $changed = Invoke-Git status --porcelain --untracked-files=all -AllowFail | ForEach-Object { "- $($_.Substring(3))" }
-    if ($changed) { $text += "## Files changed in working tree`n`n$($changed -join "`n")`n`n" }
-    [IO.File]::WriteAllText($Path, $text, $script:Utf8)
 }
 
 # ---------- Tasks (Tasks/items/*.json) ----------
