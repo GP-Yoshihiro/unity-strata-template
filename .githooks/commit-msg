@@ -12,5 +12,6 @@ fi
 add() { grep -q "^$1:" "$msg" || git interpret-trailers --in-place --if-exists doNothing --trailer "$1: $2" "$msg"; }
 [ -n "$task" ] && add "Task" "$task"
 [ -n "${AGENT_NAME:-}" ] && add "Agent" "$AGENT_NAME"
-[ -n "${AGENT_RUN_FILE:-}" ] && add "Agent-Run" "$(printf '%s' "$AGENT_RUN_FILE" | tr '\' '/')"
+# tools/agent.* sets AGENT_RUN_FILE as a repo-relative path with forward slashes
+[ -n "${AGENT_RUN_FILE:-}" ] && add "Agent-Run" "$AGENT_RUN_FILE"
 exit 0

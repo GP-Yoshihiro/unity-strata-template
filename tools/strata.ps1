@@ -88,9 +88,11 @@ function Invoke-StrataAsk([string[]]$AskArgs, [string[]]$PipedLines) {
     $answer = $json.choices[0].message.content
 
     # Recorded under the calling agent run (tools\agent.cmd sets AGENT_RUN_FILE), so delegated work is visible in History/.
-    if ($env:AGENT_RUN_FILE) {
+    if ($env:AGENT_RUN_FILE -and $env:AGENT_NAME -ne 'strata') {
         . (Join-Path $PSScriptRoot 'lib/team.ps1')
-        Add-RunSection $env:AGENT_RUN_FILE "Delegated to Strata ($model): $(($words -join ' '))" $answer 2000
+        $label = (($words -join ' ') -split "`r?`n")[0]
+        if ($label.Length -gt 80) { $label = $label.Substring(0, 80) + '...' }
+        Add-RunSection $env:AGENT_RUN_FILE "Delegated to Strata ($model): $label" $answer 2000
     }
     return $answer
 }

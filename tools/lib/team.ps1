@@ -86,7 +86,7 @@ $Prompt
 ``````
 
 "@
-    Write-TextFile (Join-Path $script:RepoRoot $rel) $text
+    Write-TextFile (Join-Path $script:RepoRoot $rel) ($text.TrimEnd() + "`n`n")
     return $rel
 }
 
@@ -104,7 +104,7 @@ function Complete-RunRecord([string]$RelPath, [int]$ExitCode) {
     $text = [IO.File]::ReadAllText($path, $script:Utf8)
     $text = $text -replace '(?m)^finished:.*$', "finished: $((Get-Date).ToString('o'))"
     $text = $text -replace '(?m)^exit_code:.*$', "exit_code: $ExitCode"
-    $changed = Invoke-Git status --porcelain -AllowFail | Where-Object { $_ -notmatch 'History/runs/' } | ForEach-Object { "- $($_.Substring(3))" }
+    $changed = Invoke-Git status --porcelain --untracked-files=all -AllowFail | Where-Object { $_ -notmatch 'History/runs/' } | ForEach-Object { "- $($_.Substring(3))" }
     if ($changed) { $text += "## Files changed in working tree`n`n$($changed -join "`n")`n`n" }
     [IO.File]::WriteAllText($path, $text, $script:Utf8)
 }
