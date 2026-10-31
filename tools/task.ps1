@@ -109,26 +109,40 @@ switch ($Command) {
         $push = Publish-Claim $Arg $info
         if (-not $push.Ok) { throw "Could not claim $Arg (someone may have claimed it a moment ago):`n$($push.Output)" }
 
-        $default = Get-DefaultBranch
-        if ($Worktree) {
-            $wtRoot = Join-Path (Split-Path -Parent $script:RepoRoot) ((Split-Path -Leaf $script:RepoRoot) + '.wt')
-            $wt = Join-Path $wtRoot $Arg
-            $null = Invoke-Git worktree add -b $branch $wt "origin/$default"
-            $target = $wt
-        } else {
-            $dirty = Invoke-Git status --porcelain
-            if ($dirty) { Write-Warning 'Working tree has uncommitted changes; they will come along to the task branch.' }
-            $null = Invoke-Git switch -c $branch "origin/$default"
-            $target = $script:RepoRoot
-        }
+        # The claim is on origin from here on. If setting up the branch fails (uncommitted changes that clash
+        # with origin/<default>, an existing branch or worktree folder, ...) give the claim back, otherwise the
+        # task would stay locked by a claim nobody is working on.
+        try {
+            $default = Get-DefaultBranch
+            if ($Worktree) {
+                $wtRoot = Join-Path (Split-Path -Parent $script:RepoRoot) ((Split-Path -Leaf $script:RepoRoot) + '.wt')
+                $wt = Join-Path $wtRoot $Arg
+                $null = Invoke-Git worktree add -b $branch $wt "origin/$default"
+                $target = $wt
+            } else {
+                $dirty = Invoke-Git status --porcelain
+                if ($dirty) { Write-Warning 'Working tree has uncommitted changes; they will come along to the task branch.' }
+                $null = Invoke-Git switch -c $branch "origin/$default"
+                $target = $script:RepoRoot
+            }
 
-        # Record the assignment on the task branch; it reaches the default branch with the PR.
-        $taskFile = Join-Path $target "Tasks/items/$Arg.json"
-        $t = Get-Content -LiteralPath $taskFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        $t.status = 'doing'; $t.assignee = $user.Name; $t.agent = $Agent; $t.branch = $branch
-        if ($Paths) { $t.paths = @($Paths) }
-        $t | Add-Member -NotePropertyName _path -NotePropertyValue $taskFile -Force
-        Save-Task $t
+            # Record the assignment on the task branch; it reaches the default branch with the PR.
+            $taskFile = Join-Path $target "Tasks/items/$Arg.json"
+            if (-not (Test-Path -LiteralPath $taskFile)) {
+                # Created with "new" but not on origin/<default> yet (a new worktree starts from origin): bring it along
+                $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $taskFile)
+                Copy-Item -LiteralPath $task._path -Destination $taskFile
+            }
+            $t = Get-Content -LiteralPath $taskFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $t.status = 'doing'; $t.assignee = $user.Name; $t.agent = $Agent; $t.branch = $branch
+            if ($Paths) { $t.paths = @($Paths) }
+            $t | Add-Member -NotePropertyName _path -NotePropertyValue $taskFile -Force
+            Save-Task $t
+        } catch {
+            $null = Invoke-Git push origin ":refs/claims/$Arg" -AllowFail
+            Write-Warning "Could not set up branch $branch, so the claim on $Arg was released. Fix the cause and claim again."
+            throw
+        }
         # git prints CRLF warnings on stderr; under Windows PowerShell 5.1 that must not abort the script
         $ErrorActionPreference = 'Continue'
         & git -C $target add -- "Tasks/items/$Arg.json" 2>&1 | Out-Null
