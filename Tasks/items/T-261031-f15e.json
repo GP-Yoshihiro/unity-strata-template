@@ -1,0 +1,24 @@
+{
+  "id": "T-261031-f15e",
+  "title": "Fix setup scripts: execute bits and safe re-run",
+  "status": "doing",
+  "priority": 2,
+  "paths": [
+    "tools/setup.sh",
+    "tools/find-unity.sh",
+    "tools/unity.sh",
+    "tools/setup.ps1"
+  ],
+  "strataRefs": [],
+  "acceptance": [
+    "bash tools/setup.sh twice in a row exits 0 both times (with Unity installed)",
+    "Without Unity, bash tools/setup.sh gets past the git/LFS step and stops only at the Unity check"
+  ],
+  "createdBy": "Claude",
+  "createdAt": "2026-10-31T04:01:38.675895554+00:00",
+  "assignee": "Claude",
+  "agent": "claude",
+  "branch": "task/T-261031-f15e-fix-setup-scripts-execute-bits",
+  "completedAt": null,
+  "notes": ""
+}

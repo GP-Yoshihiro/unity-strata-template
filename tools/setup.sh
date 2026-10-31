@@ -34,7 +34,9 @@ if [ -n "$BRANCH" ]; then
   echo "Working branch: $BRANCH"
 fi
 
-git lfs install --local >/dev/null
+# --skip-repo: only set the LFS filters. Our .githooks already chain to LFS, and once core.hooksPath points
+# there a plain `git lfs install` fails with "Hook already exists" (exit 2) on every re-run.
+git lfs install --local --skip-repo >/dev/null
 [ -z "$(git remote)" ] || git lfs pull
 # Shared team hooks (meta check, attribution trailers, no direct push to main); they chain to LFS.
 git config --local core.hooksPath .githooks
