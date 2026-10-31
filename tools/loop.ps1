@@ -213,6 +213,10 @@ while ($true) {
 
     # Commit what the agent produced; trailers (Task / Agent / Run-Record) come from the commit-msg hook
     $env:AGENT_NAME = $Agent; $env:AGENT_TASK = $task.id
+    # The agent ran as a child process, so point the Run-Record trailer at its newest record ourselves
+    $rec = Get-ChildItem -Path (Join-Path (Get-HistoryRoot) 'runs') -Recurse -Filter "*-$Agent-$($task.id).md" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($rec) { $env:AGENT_RUN_REF = "runs/$($rec.Directory.Name)/$($rec.Name)" }
     $null = Invoke-Git add -A
     $status = if ($passed) { 'implement' } else { 'WIP, tests failing' }
     $commit = Invoke-Git commit -q -m "task($($task.id)): $status -- $($task.title)" -AllowFail
